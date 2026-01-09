@@ -1,0 +1,256 @@
+/* Alap */
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #f3f3f3;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* Betűtípus */
+@font-face {
+  font-family: "AlwaysInMyHeart";
+  src: url("AlwaysInMyHeart.ttf") format("truetype");
+  font-display: swap;
+}
+
+/* Layout */
+#app { display: flex; height: 100vh; }
+
+/* Sidebar */
+.sidebar {
+  width: 320px;
+  min-width: 320px;
+  max-width: 360px;
+  padding: 16px 18px;
+  border-right: 1px solid #ddd;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+.app-title { font-size: 20px; margin: 0 0 6px; }
+
+.panel-section {
+  padding: 12px 10px;
+  background: #fafafa;
+  border: 1px solid #e3e3e3;
+}
+
+.panel-section h2 { font-size: 15px; margin: 0 0 10px; }
+
+.field-label { display: block; font-size: 13px; margin-bottom: 4px; }
+
+.select {
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid #ccc;
+  background: #fff;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+#title-input {
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid #ccc;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.radio-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 13px;
+  margin: 6px 0;
+  cursor: pointer;
+}
+
+.field-row {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.mini {
+  flex: 1;
+  border: 1px solid #ddd;
+  background: #fff;
+  padding: 8px 10px;
+}
+
+.mini-label { font-size: 11px; color: #666; margin-bottom: 2px; }
+.mini-value { font-size: 14px; font-weight: 600; }
+
+/* Kategóriák */
+.pattern-category { margin-top: 8px; }
+.pattern-category-header {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 4px 2px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pattern-category-arrow { font-size: 11px; transition: transform 0.15s ease; }
+.pattern-category-body { margin-top: 6px; }
+
+.pattern-category.collapsed .pattern-category-body { display: none; }
+.pattern-category.collapsed .pattern-category-arrow { transform: rotate(-90deg); }
+
+.pattern-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.pattern-btn {
+  width: 100%;
+  height: 70px;
+  border: 1px solid #ddd;
+  background: #fff;
+  padding: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pattern-btn img {
+  max-width: 85%;
+  max-height: 85%;
+  object-fit: contain;
+  filter: brightness(0) saturate(100%);
+}
+
+.hint-text { margin-top: 6px; font-size: 11px; color: #777; }
+
+/* Gombok */
+.primary-btn {
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  background: #232324;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  margin-top: 6px;
+}
+.primary-btn:hover { opacity: 0.92; }
+
+.secondary-btn {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #999;
+  background: #fff;
+  color: #232324;
+  font-size: 13px;
+  cursor: pointer;
+}
+.secondary-btn:hover { background: #f0f0f0; }
+
+/* Workspace */
+.workspace {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 18px;
+  overflow: auto;
+}
+
+.workspace-inner { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; }
+
+#canvas-wrapper {
+  max-width: calc(100% - 40px);
+  max-height: calc(100% - 40px);
+}
+
+#canvas {
+  position: relative;
+  width: min(72vw, 980px);
+  aspect-ratio: 310 / 225; /* tartjuk a bevált arányt */
+  overflow: hidden;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.2);
+
+  /* anyag / gravír változók */
+  --mat-texture: url("assets/textures/birch.png");
+  --engrave: #8a6a3b;
+}
+
+#wall-layer {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  z-index: 1;
+}
+
+/* réteg: elemek */
+#items-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+
+/* közös item */
+.item {
+  position: absolute;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.item:active { cursor: grabbing; }
+
+.item.selected {
+  outline: 1px dashed rgba(0,0,0,0.55);
+  outline-offset: 3px;
+}
+
+/* felirat */
+.title-item { left: 50%; top: 50%; transform: translate(-50%, -50%); }
+
+.engrave-text {
+  font-family: "AlwaysInMyHeart", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 96px; /* induló, JS finomít */
+  line-height: 1;
+  white-space: nowrap;
+
+  /* gravír szín */
+  color: var(--engrave);
+
+  /* enyhe gravír-hatás */
+  text-shadow: 0 1px 1px rgba(0,0,0,0.25);
+}
+
+/* ikon itemben az inline svg */
+.item svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.25));
+}
+
+/* export közben ne legyen kijelölés keret */
+.exporting .item.selected { outline: none !important; }
+
+/* Reszponzív */
+@media (max-width: 900px) {
+  .sidebar { width: 280px; min-width: 280px; }
+  #canvas { width: 100vw; max-width: 100vw; }
+}
+@media (max-width: 900px) and (orientation: landscape) {
+  #canvas { height: calc(100vh - 40px); width: auto; max-height: calc(100vh - 40px); }
+}
