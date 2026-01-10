@@ -29,6 +29,34 @@
       </section>
 
       <section class="panel-section">
+        <h2>Kalibráció (komód = 70 cm)</h2>
+
+        <button id="calib-toggle-btn" class="secondary-btn" type="button">
+          Kalibrálás indítása
+        </button>
+
+        <div class="hint-text">
+          Lépés: húzd a <b>felső</b> jelölőt a komód tetejére, az <b>alsót</b> a komód aljára, majd „Mentés”.
+          <br />
+          Alapesetben nincsenek vonalak / jelölők.
+        </div>
+
+        <div class="field-row" style="margin-top:10px;">
+          <button id="calib-save-btn" class="primary-btn" type="button" style="margin:0; display:none;">
+            Kalibráció mentése
+          </button>
+          <button id="calib-cancel-btn" class="secondary-btn" type="button" style="display:none;">
+            Mégse
+          </button>
+        </div>
+
+        <div class="mini" style="margin-top:10px;">
+          <div class="mini-label">Skála</div>
+          <div class="mini-value"><span id="scale-out">—</span> px / cm</div>
+        </div>
+      </section>
+
+      <section class="panel-section">
         <h2>Anyag</h2>
 
         <label class="radio-row">
@@ -42,7 +70,7 @@
         </label>
 
         <div class="hint-text">
-          Felirat: kivágott anyag-szín. Ikonok: gravír.
+          Felirat = anyagszín (nem gravír). Ikonok = gravír.
         </div>
       </section>
 
@@ -52,7 +80,7 @@
         <label class="field-label" for="template-select">Sablonok</label>
         <select id="template-select" class="select">
           <option value="">– válassz sablont –</option>
-          <option value="Egyszer volt, hol nem volt…">Egyszer volt, hol nem volt…</option>
+          <option value="Egyszer volt, hol nem volt …">Egyszer volt, hol nem volt …</option>
           <option value="Kis lépések, nagy csodák">Kis lépések, nagy csodák</option>
           <option value="Álmodj nagyot kisfiam!">Álmodj nagyot kisfiam!</option>
           <option value="Álmodj nagyot kislányom!">Álmodj nagyot kislányom!</option>
@@ -63,7 +91,7 @@
 
         <div class="field-row">
           <div class="mini">
-            <div class="mini-label">Felirat magasság (falhoz viszonyítva)</div>
+            <div class="mini-label">Felirat magasság (valós)</div>
             <div class="mini-value"><span id="title-size">—</span> cm</div>
           </div>
           <button id="center-title-btn" class="secondary-btn" type="button">
@@ -72,12 +100,9 @@
         </div>
 
         <div class="hint-text">
-          A felirat húzható. Betűméret FIX. Új sor esetén nem kicsinyül.
-        </div>
-
-        <div class="hint-text">
-          Megjegyzés: A végső gyártáskor az ékezetek és különálló betűrészek egybe lesznek forrasztva,
-          így a felirat egységes darabként készül el.
+          A felirat húzható. Fix valós betűméret, Enter nem kicsinyít.
+          <br />
+          <b>Megjegyzés:</b> A végső gyártáskor az ékezetek és különálló betűrészek egybe lesznek forrasztva, így a felirat egységes darabként készül el.
         </div>
       </section>
 
@@ -123,15 +148,17 @@
           <div id="canvas">
             <div id="wall-layer"></div>
 
+            <!-- Kalibráció overlay (alapesetben rejtve, exportnál sem látszik) -->
+            <div id="calibration-layer" aria-hidden="true">
+              <div id="calib-top" class="calib-handle" title="Komód teteje"></div>
+              <div id="calib-bottom" class="calib-handle" title="Komód alja"></div>
+            </div>
+
             <div id="items-layer">
               <div id="title-item" class="item title-item" tabindex="0">
                 <span id="title-text" class="engrave-text">Felirat</span>
               </div>
             </div>
-
-            <!-- Segédvonalak (nem exportoljuk, csak arányhoz) -->
-            <div class="wall-guide top" aria-hidden="true"></div>
-            <div class="wall-guide bottom" aria-hidden="true"></div>
           </div>
         </div>
       </div>
