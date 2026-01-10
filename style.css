@@ -56,7 +56,7 @@ html, body {
   margin-bottom: 10px;
 }
 
-/* textarea */
+/* textarea támogatás */
 #title-input {
   width: 100%;
   padding: 7px 8px;
@@ -181,7 +181,6 @@ html, body {
   max-height: calc(100% - 40px);
 }
 
-/* CANVAS */
 #canvas {
   position: relative;
   width: min(72vw, 980px);
@@ -189,14 +188,16 @@ html, body {
   overflow: hidden;
   box-shadow: 0 6px 18px rgba(0,0,0,0.2);
 
-  /* Anyag presetet a JS állítja */
+  /* Anyag preset (JS állítja) */
   --mat-texture: url("assets/textures/birch.png");
+  --engrave: #7a4a1e;
+  --engrave-opacity: 0.70;
+  --engrave-blend: multiply;
+  --engrave-shadow: rgba(0,0,0,0.12);
 
-  /* FELIRAT (kivágott anyag-szín) */
-  --title-color: #e8d7b0; /* nyír alap */
-
-  /* IKONOK (gravír szín) */
-  --icon-engrave: #7a4a1e; /* nyír gravír alap */
+  /* Felirat kitöltés (JS állítja) */
+  --title-fill: url("assets/textures/birch.png");
+  --title-shadow: rgba(0,0,0,0.18);
 }
 
 #wall-layer {
@@ -206,6 +207,51 @@ html, body {
   background-position: center;
   z-index: 1;
 }
+
+/* Kalibráció overlay (alapesetben rejtve) */
+#calibration-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: none; /* csak kalibráció módban */
+  pointer-events: none;
+}
+
+#calibration-layer.active { display: block; }
+
+.calib-handle {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 0;
+  pointer-events: auto;
+  cursor: ns-resize;
+}
+
+.calib-handle::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: -10px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(20,20,20,0.85);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.22);
+}
+
+.calib-handle::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -1px;
+  height: 2px;
+  background: rgba(20,20,20,0.55);
+}
+
+#calib-top::before { content: "T"; color: #fff; display:flex; align-items:center; justify-content:center; font-size:12px; }
+#calib-bottom::before { content: "B"; color: #fff; display:flex; align-items:center; justify-content:center; font-size:12px; }
 
 /* réteg: elemek */
 #items-layer {
@@ -229,23 +275,29 @@ html, body {
   outline-offset: 3px;
 }
 
-/* felirat pozíció */
+/* felirat */
 .title-item { left: 50%; top: 50%; transform: translate(-50%, -50%); }
 
-/* FELIRAT: FIX betűméret + ENTER sortörés
-   (szándékosan NINCS JS-es kicsinyítés) */
+/* multiline + ANYAG kitöltés (nem gravír) */
 .engrave-text {
   font-family: "AlwaysInMyHeart", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 96px;       /* FIX */
+  font-size: 96px; /* JS felülírja px-ben a valós cm-hez */
   line-height: 1.05;
-  white-space: pre-line; /* ENTER */
+  white-space: pre-line;
   text-align: center;
-  color: var(--title-color);
 
-  /* minimál „kivágott” mélység érzet (nem gravír!) */
+  /* Anyag kitöltés */
+  color: transparent;
+  background-image: var(--title-fill);
+  background-size: cover;
+  background-position: center;
+  -webkit-background-clip: text;
+  background-clip: text;
+
+  /* finom térhatás */
   text-shadow:
-    0 1px 0 rgba(0,0,0,0.10),
-    0 2px 2px rgba(0,0,0,0.10);
+    0.6px 0.8px 0 var(--title-shadow),
+    -0.3px 0.4px 0 rgba(0,0,0,0.08);
 }
 
 /* ikon itemben az inline svg */
@@ -255,27 +307,16 @@ html, body {
   height: 100%;
 }
 
-/* ikonkhoz adunk egy nagyon enyhe árnyékot */
-.icon-item svg {
-  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.12));
+/* ikonok gravír “keverés” */
+.icon-item {
+  opacity: var(--engrave-opacity);
+  mix-blend-mode: var(--engrave-blend);
+  filter: drop-shadow(0.6px 0.8px 0 var(--engrave-shadow));
 }
 
-/* Segédvonalak (fal-rész kijelölése) */
-.wall-guide {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 0;
-  border-top: 1px dashed rgba(0,0,0,0.25);
-  z-index: 3;
-  pointer-events: none;
-}
-.wall-guide.top { top: 12%; }
-.wall-guide.bottom { top: 88%; }
-
-/* export közben ne legyen kijelölés keret + segédvonal */
+/* export közben ne legyen kijelölés keret + kalibráció */
 .exporting .item.selected { outline: none !important; }
-.exporting .wall-guide { display: none !important; }
+.exporting #calibration-layer { display: none !important; }
 
 /* Reszponzív */
 @media (max-width: 900px) {
