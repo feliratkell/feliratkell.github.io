@@ -1,42 +1,45 @@
 /*****************************************************************
- * FELIRAT LÁTVÁNYTERVEZŐ – v1.3 (VÉGLEGES LOGIKA)
- * - Fal referencia: 200 cm (2m), de a "fal-rész" a canvas 12%–88% sávja
- * - FELIRAT: kivágott anyag-szín (NEM gravír), FIX betűméret
- * - IKONOK: gravírozott szín (anyagfüggő)
- * - ENTER: új sor, semmi nem kicsinyül
- * - "... / …" elé automatikus szóköz: " …"
- * - Drag, kijelölés, törlés, Ctrl+C/V, PNG export, CSV export marad
+ * FELIRAT LÁTVÁNYTERVEZŐ – v1.3 (KOMÓD-KALIBRÁCIÓ)
+ * - Referencia: KOMÓD magasság = 70 cm (kalibrálható háttérképenként)
+ * - Felirat = anyagszín (nyír/hdf), NEM gravír
+ * - Ikonok = gravír (anyagfüggő szín + opacity + blend)
+ * - ENTER új sor: betűméret nem csökken
+ * - Kalibráció overlay csak bekapcsolva látszik, exportban sosem
+ * - Sablon: „ …” előtt szóköz
+ * - Megjegyzés: gyártáskor az ékezetek és külön részek össze lesznek forrasztva
  *****************************************************************/
 
-// Fal valós mérete (referencia)
-const WALL_HEIGHT_CM = 200;                 // 2m
-const WALL_ASPECT = 310 / 225;              // canvas arány
-const WALL_WIDTH_CM = WALL_HEIGHT_CM * WALL_ASPECT;
+const CABINET_HEIGHT_CM = 70; // fix referencia
 
-// A fal ténylegesen látható része a vásznon (segédvonalakhoz igazítva)
-const WALL_REGION_TOP_PCT = 0.12;           // 12%
-const WALL_REGION_BOTTOM_PCT = 0.88;        // 88%
+// Felirat betűmagasság (valós cm). ENTER nem kicsinyít: ez fix marad.
+const TITLE_LETTER_CM = 11.0;
 
-// Ikon alapmagasság (valós falhoz viszonyítva)
-const ICON_DEFAULT_HEIGHT_CM = 12;
+// Ikon alap magasság (valós cm)
+const ICON_BASE_CM = 12.0;
 
-// Anyag presetek
-// - titleColor: felirat (kivágott anyag szín)
-// - iconEngrave: ikon (gravír szín)
+// Anyag preset (ikon gravír)
 const MATERIALS = {
   birch: {
     textureUrl: "assets/textures/birch.png",
-    titleColor: "#e8d7b0",      // nyír / világos fa
-    iconEngrave: "#7a4a1e"      // nyír gravír (barnás)
+    titleFill:  "assets/textures/birch.png",
+    engrave: "#7A4A1E",
+    opacity: 0.70,
+    blend: "multiply",
+    shadow: "rgba(0,0,0,0.12)",
+    titleShadow: "rgba(0,0,0,0.18)"
   },
   hdf: {
     textureUrl: "assets/textures/hdf-white.png",
-    titleColor: "#ffffff",      // fehér HDF
-    iconEngrave: "#1e1e1e"      // HDF gravír (feketés)
+    titleFill:  "__WHITE__", // speciális: sima fehér
+    engrave: "#1E1E1E",
+    opacity: 0.86,
+    blend: "multiply",
+    shadow: "rgba(0,0,0,0.14)",
+    titleShadow: "rgba(0,0,0,0.18)"
   }
 };
 
-// Fal képek
+// Fal
 const WALLS = {
   white: "assets/backgrounds/white.png",
   beige: "assets/backgrounds/beige.png",
@@ -49,9 +52,9 @@ let selectedItem = null;
 let dragState = null;
 let clipboard = null;
 
-// Felirat módot meghagyjuk kompatibilitás miatt, de a felirat TEXT
-let titleMode = "text";
-let titleSvgSrc = "";
+let activeWallKey = "white";
+let calibrating = false;
+let calibDrag = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   initWall();
@@ -62,9 +65,14 @@ document.addEventListener("DOMContentLoaded", () => {
   initSelectionAndShortcuts();
   initExport();
   initCsvExport();
+  initCalibration();
 
   applyWall("white");
   applyMaterial("birch");
+
+  // betöltjük a mentett skálát, ha van
+  syncScaleUi();
+  applyTitleLetterSize();
   centerTitle();
   updateTitleSizeLabel();
 
@@ -72,8 +80,9 @@ document.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("resize", () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
-      // FIX betűméret → nem skálázunk semmit
+      applyTitleLetterSize();
       updateTitleSizeLabel();
+      // ikonok mérete px-ben fix marad, de cm-kiírás/frissítés a skálával lesz pontos
     }, 120);
   });
 });
@@ -88,25 +97,11 @@ function getPointer(e) {
   return { x: e.clientX, y: e.clientY };
 }
 
-function canvasRect() {
-  return document.getElementById("canvas").getBoundingClientRect();
-}
+function canvasEl() { return document.getElementById("canvas"); }
 
-// fal-rész (12%–88%) pixelmagasság
-function wallRegionHeightPx() {
-  const r = canvasRect();
-  return r.height * (WALL_REGION_BOTTOM_PCT - WALL_REGION_TOP_PCT);
-}
+function canvasRect() { return canvasEl().getBoundingClientRect(); }
 
-function pxPerCmY() {
-  // a fal 200 cm a "fal-rész" magasságához tartozik
-  return wallRegionHeightPx() / WALL_HEIGHT_CM;
-}
-
-function pxPerCmX() {
-  const r = canvasRect();
-  return r.width / WALL_WIDTH_CM;
-}
+function isFileProtocol() { return window.location.protocol === "file:"; }
 
 function setSelected(el) {
   if (selectedItem) selectedItem.classList.remove("selected");
@@ -114,21 +109,44 @@ function setSelected(el) {
   if (selectedItem) selectedItem.classList.add("selected");
 }
 
+function getLinesCount(text) {
+  const t = String(text || "").replace(/\r\n/g, "\n");
+  return Math.max(1, t.split("\n").length);
+}
+
 function getTitleTextRaw() {
   const el = document.getElementById("title-input");
   return (el?.value ?? "").replace(/\r\n/g, "\n");
 }
 
-// "..." vagy "…", és ha nincs előtte space → tegyünk: " …"
-function normalizeEllipsisSpacing(text) {
-  let t = String(text ?? "");
-  // egységesítsük: "..." → "…"
-  t = t.replace(/\.{3}/g, "…");
-  // "valami…" → "valami …"
-  t = t.replace(/(\S)…/g, "$1 …");
-  // többszörös space-eket ne gerjesszük
-  t = t.replace(/\s{2,}/g, " ");
-  return t;
+/*****************************************************************
+ * Skála (px/cm) – háttérképenként mentve
+ *****************************************************************/
+function storageKeyForWall(wallKey) {
+  return `felirat_scale_ppcm__${wallKey}`;
+}
+
+function getPxPerCm() {
+  const raw = localStorage.getItem(storageKeyForWall(activeWallKey));
+  const n = raw ? Number(raw) : NaN;
+  // ha nincs kalibráció: egy óvatos default (ne legyen óriás)
+  if (!isFinite(n) || n <= 0) {
+    // default: a teljes vászon magasságát kb. 220 cm-nek vesszük
+    const r = canvasRect();
+    return r.height / 220;
+  }
+  return n;
+}
+
+function setPxPerCm(ppcm) {
+  localStorage.setItem(storageKeyForWall(activeWallKey), String(ppcm));
+}
+
+function syncScaleUi() {
+  const out = document.getElementById("scale-out");
+  if (!out) return;
+  const ppcm = getPxPerCm();
+  out.textContent = ppcm.toFixed(2);
 }
 
 /*****************************************************************
@@ -141,10 +159,22 @@ function initWall() {
 }
 
 function applyWall(key) {
+  activeWallKey = key || "white";
+
   const wallLayer = document.getElementById("wall-layer");
   if (!wallLayer) return;
-  const url = WALLS[key] || WALLS.white;
+
+  const url = WALLS[activeWallKey] || WALLS.white;
   wallLayer.style.backgroundImage = `url("${url}")`;
+
+  // skála UI frissül
+  syncScaleUi();
+
+  // új falnál is legyen jó a betűméret (ppcm változhat)
+  applyTitleLetterSize();
+  updateTitleSizeLabel();
+
+  // ha kalibráció módban vagyunk, a jelölők maradnak a helyükön (px-ben)
 }
 
 /*****************************************************************
@@ -157,75 +187,68 @@ function initMaterial() {
 }
 
 function applyMaterial(matKey) {
-  const canvas = document.getElementById("canvas");
+  const canvas = canvasEl();
   const mat = MATERIALS[matKey] || MATERIALS.birch;
 
-  // CSS változók
-  canvas.style.setProperty("--mat-texture", `url("${mat.textureUrl}")`);
-  canvas.style.setProperty("--title-color", mat.titleColor);
-  canvas.style.setProperty("--icon-engrave", mat.iconEngrave);
+  // Ikon gravír preset
+  canvas.style.setProperty("--engrave", mat.engrave);
+  canvas.style.setProperty("--engrave-opacity", String(mat.opacity));
+  canvas.style.setProperty("--engrave-blend", mat.blend);
+  canvas.style.setProperty("--engrave-shadow", mat.shadow);
 
-  // ikonok gravír színe
+  // Felirat (anyag kitöltés, nem gravír)
+  if (mat.titleFill === "__WHITE__") {
+    // sima fehér kitöltés
+    canvas.style.setProperty("--title-fill", "linear-gradient(#ffffff, #ffffff)");
+  } else {
+    canvas.style.setProperty("--title-fill", `url("${mat.titleFill}")`);
+  }
+  canvas.style.setProperty("--title-shadow", mat.titleShadow);
+
+  // ikonok szín
   document.querySelectorAll("#items-layer .icon-item").forEach(el => {
-    applySvgEngraveColor(el, mat.iconEngrave);
+    applySvgEngraveColor(el, mat.engrave);
     el.dataset.material = matKey;
-    el.dataset.engrave = mat.iconEngrave;
+    el.dataset.engrave = mat.engrave;
   });
 
-  // felirat meta + szín (NEM gravír)
+  // felirat meta
   const title = document.getElementById("title-item");
   if (title) {
     title.dataset.material = matKey;
-    title.dataset.titleColor = mat.titleColor;
   }
-
-  updateTitleSizeLabel();
 }
 
 /*****************************************************************
- * Felirat (TEXT + ENTER sortörés + FIX betűméret)
+ * Felirat (TEXT + ENTER törés + FIX betűmagasság cm)
  *****************************************************************/
 function initTitle() {
-  const input = document.getElementById("title-input");      // textarea
-  const tpl   = document.getElementById("template-select");
+  const input = document.getElementById("title-input");
+  const tpl = document.getElementById("template-select");
   const titleItem = document.getElementById("title-item");
   const titleText = document.getElementById("title-text");
   const centerBtn = document.getElementById("center-title-btn");
 
   if (!input || !titleItem || !titleText) return;
 
-  // alap
   if (!input.value) input.value = "Felirat";
-  input.value = normalizeEllipsisSpacing(input.value);
-  titleText.textContent = input.value;
+  titleText.textContent = normalizeEllipsisSpacing(input.value);
 
   if (tpl) {
     tpl.addEventListener("change", () => {
       if (!tpl.value) return;
-      const val = normalizeEllipsisSpacing(tpl.value);
-
-      // TEXT sablonok
-      titleMode = "text";
-      titleSvgSrc = "";
-
-      input.value = val;
-      titleText.textContent = val;
+      input.value = tpl.value;
+      titleText.textContent = normalizeEllipsisSpacing(tpl.value);
       tpl.value = "";
-
+      applyTitleLetterSize();
       updateTitleSizeLabel();
     });
   }
 
   input.addEventListener("input", () => {
-    const norm = normalizeEllipsisSpacing(getTitleTextRaw() || "Felirat");
-    // textarea tartalmát is javítjuk, hogy a user lássa
-    if (input.value !== norm) {
-      const pos = input.selectionStart;
-      input.value = norm;
-      // próbáljuk megtartani nagyjából a kurzort
-      try { input.selectionStart = input.selectionEnd = Math.min(pos, norm.length); } catch (_) {}
-    }
-    titleText.textContent = norm;
+    titleText.textContent = normalizeEllipsisSpacing(getTitleTextRaw() || "Felirat");
+    // ENTER nem csökkent: betűméret fix, csak label frissül
+    applyTitleLetterSize();
     updateTitleSizeLabel();
   });
 
@@ -237,13 +260,40 @@ function initTitle() {
   }
 
   makeDraggable(titleItem);
+
+  requestAnimationFrame(() => {
+    applyTitleLetterSize();
+    updateTitleSizeLabel();
+  });
+}
+
+// „.../… ” előtti szóköz szépítése
+function normalizeEllipsisSpacing(text) {
+  const s = String(text || "");
+  // 1) ha "nem volt…" -> "nem volt …"
+  // 2) ha "nem volt..." -> "nem volt ..."
+  return s
+    .replace(/(\S)(\.\.\.|…)/g, "$1 $2")
+    .replace(/\s+(…)/g, " $1")
+    .replace(/\s+(\.\.\.)/g, " $1");
+}
+
+function applyTitleLetterSize() {
+  const titleText = document.getElementById("title-text");
+  if (!titleText) return;
+
+  const ppcm = getPxPerCm();
+  const px = TITLE_LETTER_CM * ppcm;
+
+  // Fix betűméret px-ben – nem kalibrációs “mérés”, hanem fix cm->px
+  titleText.style.fontSize = `${clamp(px, 10, 600)}px`;
 }
 
 /*****************************************************************
- * Pozicionálás + kijelzett cm (fal-részhez)
+ * Pozicionálás + kijelzett cm (valós)
  *****************************************************************/
 function centerTitle() {
-  const canvas = document.getElementById("canvas");
+  const canvas = canvasEl();
   const title = document.getElementById("title-item");
   if (!canvas || !title) return;
 
@@ -259,16 +309,13 @@ function centerTitle() {
 }
 
 function updateTitleSizeLabel() {
-  const canvas = document.getElementById("canvas");
-  const title  = document.getElementById("title-item");
-  const out    = document.getElementById("title-size");
-  if (!canvas || !title || !out) return;
+  const out = document.getElementById("title-size");
+  const title = document.getElementById("title-item");
+  if (!out || !title) return;
 
-  const rT = title.getBoundingClientRect();
-  const hPx = rT.height;
-
-  const wallPx = wallRegionHeightPx();
-  const cm = (hPx / wallPx) * WALL_HEIGHT_CM;
+  const ppcm = getPxPerCm();
+  const hPx = title.getBoundingClientRect().height || 0;
+  const cm = hPx / (ppcm || 1);
 
   out.textContent = cm.toFixed(1);
 }
@@ -281,6 +328,10 @@ function initIconPanel() {
     btn.addEventListener("click", async () => {
       const src = btn.dataset.src;
       const alt = btn.dataset.alt || "Ikon";
+
+      if (isFileProtocol()) {
+        alert("Offline (file://) módban a böngésző letilthatja az ikonok betöltését. GitHub Pages-en működik. Ha kéred, adok egy 1 perces megoldást helyi szerverre.");
+      }
 
       try {
         const svgText = await fetchSvg(src);
@@ -311,7 +362,7 @@ async function fetchSvg(url) {
 
 function addIcon(svgText, meta) {
   const itemsLayer = document.getElementById("items-layer");
-  const canvas = document.getElementById("canvas");
+  const canvas = canvasEl();
   if (!itemsLayer || !canvas) return;
 
   const matKey = document.querySelector('input[name="material"]:checked')?.value || "birch";
@@ -324,13 +375,13 @@ function addIcon(svgText, meta) {
   el.dataset.src = meta.src || "";
   el.dataset.alt = meta.alt || "";
   el.dataset.material = matKey;
-  el.dataset.engrave = mat.iconEngrave;
+  el.dataset.engrave = mat.engrave;
 
   const svg = el.querySelector("svg");
-  const ppcm = pxPerCmY();
 
-  // alap ikon magasság: 12 cm (falhoz)
-  const size = computeSvgSizePx(svg, ppcm, ICON_DEFAULT_HEIGHT_CM);
+  // Ikon valós cm -> px (komód alapján)
+  const ppcm = getPxPerCm();
+  const size = computeSvgSizePx(svg, ppcm, ICON_BASE_CM);
 
   el.style.width  = `${size.w}px`;
   el.style.height = `${size.h}px`;
@@ -339,7 +390,7 @@ function addIcon(svgText, meta) {
   el.style.left = `${(rC.width - size.w) / 2}px`;
   el.style.top  = `${(rC.height - size.h) / 2}px`;
 
-  applySvgEngraveColor(el, mat.iconEngrave);
+  applySvgEngraveColor(el, mat.engrave);
 
   itemsLayer.appendChild(el);
   makeDraggable(el);
@@ -356,6 +407,7 @@ function computeSvgSizePx(svg, pxPerCm, targetHeightCm) {
     if (parts.length === 4 && parts[3] > 0) aspect = parts[2] / parts[3];
   }
 
+  // ha az SVG-ben van explicit cm/mm/px, azt tiszteljük
   const wAttr = svg?.getAttribute("width")  || "";
   const hAttr = svg?.getAttribute("height") || "";
 
@@ -500,7 +552,7 @@ function initCategories() {
  * Kijelölés, törlés, copy/paste
  *****************************************************************/
 function initSelectionAndShortcuts() {
-  const canvas = document.getElementById("canvas");
+  const canvas = canvasEl();
   if (!canvas) return;
 
   canvas.addEventListener("mousedown", (e) => {
@@ -541,8 +593,7 @@ function initSelectionAndShortcuts() {
 }
 
 function serializeItem(el) {
-  const canvas = document.getElementById("canvas");
-  const cR = canvas.getBoundingClientRect();
+  const cR = canvasRect();
   const r  = el.getBoundingClientRect();
 
   const base = {
@@ -553,10 +604,7 @@ function serializeItem(el) {
     h: el.offsetHeight
   };
 
-  if (base.type === "title") {
-    base.titleMode = titleMode;
-    base.text = getTitleTextRaw() || "Felirat";
-  } else {
+  if (base.type === "icon") {
     base.svg = el.querySelector("svg")?.outerHTML || "";
     base.src = el.dataset.src || "";
     base.alt = el.dataset.alt || "Ikon";
@@ -589,9 +637,9 @@ function pasteItem(data) {
   el.dataset.src = data.src || "";
   el.dataset.alt = data.alt || "Ikon";
   el.dataset.material = matKey;
-  el.dataset.engrave  = mat.iconEngrave;
+  el.dataset.engrave  = mat.engrave;
 
-  applySvgEngraveColor(el, mat.iconEngrave);
+  applySvgEngraveColor(el, mat.engrave);
 
   itemsLayer.appendChild(el);
   makeDraggable(el);
@@ -599,12 +647,144 @@ function pasteItem(data) {
 }
 
 /*****************************************************************
+ * Kalibráció (komód = 70 cm)
+ *****************************************************************/
+function initCalibration() {
+  const toggleBtn = document.getElementById("calib-toggle-btn");
+  const saveBtn = document.getElementById("calib-save-btn");
+  const cancelBtn = document.getElementById("calib-cancel-btn");
+  const layer = document.getElementById("calibration-layer");
+  const topH = document.getElementById("calib-top");
+  const botH = document.getElementById("calib-bottom");
+
+  if (!toggleBtn || !saveBtn || !cancelBtn || !layer || !topH || !botH) return;
+
+  // alap pozíciók: képernyőn középtájék, hogy gyors legyen beállítani
+  function placeDefaultHandles() {
+    const r = canvasRect();
+    const y1 = r.height * 0.55;
+    const y2 = r.height * 0.78;
+    topH.style.top = `${y1}px`;
+    botH.style.top = `${y2}px`;
+  }
+
+  placeDefaultHandles();
+
+  toggleBtn.addEventListener("click", () => {
+    calibrating = !calibrating;
+
+    if (calibrating) {
+      layer.classList.add("active");
+      saveBtn.style.display = "";
+      cancelBtn.style.display = "";
+      toggleBtn.textContent = "Kalibrálás: aktív";
+      // ha már van mentett skála, akkor is legyen értelmes helyen
+      placeDefaultHandles();
+    } else {
+      layer.classList.remove("active");
+      saveBtn.style.display = "none";
+      cancelBtn.style.display = "none";
+      toggleBtn.textContent = "Kalibrálás indítása";
+      calibDrag = null;
+    }
+  });
+
+  cancelBtn.addEventListener("click", () => {
+    calibrating = false;
+    layer.classList.remove("active");
+    saveBtn.style.display = "none";
+    cancelBtn.style.display = "none";
+    toggleBtn.textContent = "Kalibrálás indítása";
+    calibDrag = null;
+  });
+
+  saveBtn.addEventListener("click", () => {
+    const r = canvasRect();
+
+    const yTop = parsePx(topH.style.top);
+    const yBot = parsePx(botH.style.top);
+
+    const topY = clamp(Math.min(yTop, yBot), 0, r.height);
+    const botY = clamp(Math.max(yTop, yBot), 0, r.height);
+
+    const cabinetPx = botY - topY;
+    if (cabinetPx < 10) {
+      alert("Túl kicsi a távolság. Állítsd a jelölőket a komód tetejére és aljára.");
+      return;
+    }
+
+    const ppcm = cabinetPx / CABINET_HEIGHT_CM;
+    setPxPerCm(ppcm);
+    syncScaleUi();
+
+    // frissítjük a valós méreteket
+    applyTitleLetterSize();
+    updateTitleSizeLabel();
+
+    // kilépünk
+    calibrating = false;
+    layer.classList.remove("active");
+    saveBtn.style.display = "none";
+    cancelBtn.style.display = "none";
+    toggleBtn.textContent = "Kalibrálás indítása";
+    calibDrag = null;
+  });
+
+  // Drag a handle-ökhöz
+  function hookHandle(handleEl) {
+    handleEl.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      if (!calibrating) return;
+      calibDrag = { el: handleEl, startY: getPointer(e).y };
+    });
+
+    handleEl.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      if (!calibrating) return;
+      calibDrag = { el: handleEl, startY: getPointer(e).y };
+    }, { passive: false });
+  }
+
+  hookHandle(topH);
+  hookHandle(botH);
+
+  document.addEventListener("mousemove", (e) => {
+    if (!calibDrag) return;
+    onCalibMove(e);
+  });
+  document.addEventListener("touchmove", (e) => {
+    if (!calibDrag) return;
+    onCalibMove(e);
+    e.preventDefault();
+  }, { passive: false });
+
+  document.addEventListener("mouseup", () => { calibDrag = null; });
+  document.addEventListener("touchend", () => { calibDrag = null; });
+
+  function onCalibMove(e) {
+    const r = canvasRect();
+    const p = getPointer(e);
+
+    const canvasTop = r.top;
+    let y = p.y - canvasTop;
+    y = clamp(y, 0, r.height);
+
+    calibDrag.el.style.top = `${y}px`;
+  }
+}
+
+function parsePx(s) {
+  const n = parseFloat(String(s || "0").replace("px",""));
+  return isFinite(n) ? n : 0;
+}
+
+/*****************************************************************
  * PNG export
  *****************************************************************/
 function initExport() {
   const btn = document.getElementById("export-btn");
-  const canvasEl = document.getElementById("canvas");
-  if (!btn || !canvasEl) return;
+  const canvasNode = canvasEl();
+  if (!btn || !canvasNode) return;
 
   btn.addEventListener("click", async () => {
     const prev = selectedItem;
@@ -613,7 +793,7 @@ function initExport() {
     document.body.classList.add("exporting");
 
     try {
-      const shot = await html2canvas(canvasEl, {
+      const shot = await html2canvas(canvasNode, {
         scale: 2,
         useCORS: true,
         backgroundColor: null,
@@ -635,7 +815,7 @@ function initExport() {
 }
 
 /*****************************************************************
- * CSV export (méretek) – valós falhoz (fal-rész szerint)
+ * CSV export (valós cm) – komód skálával
  *****************************************************************/
 function initCsvExport() {
   const btn = document.getElementById("export-csv-btn");
@@ -644,29 +824,28 @@ function initCsvExport() {
 }
 
 function exportCsv() {
-  const canvas = document.getElementById("canvas");
-  const cR = canvas.getBoundingClientRect();
-
-  const pxToCmX = WALL_WIDTH_CM  / cR.width;
-  const pxToCmY = WALL_HEIGHT_CM / wallRegionHeightPx(); // fal-rész magassága!
+  const cR = canvasRect();
+  const ppcm = getPxPerCm();
 
   const matKey = document.querySelector('input[name="material"]:checked')?.value || "birch";
   const mat = MATERIALS[matKey] || MATERIALS.birch;
 
   const rows = [];
-  rows.push("Típus;Név;Szélesség (cm);Magasság (cm);Anyag;Szín;Forrás");
+  rows.push("Típus;Név;Szélesség (cm);Magasság (cm);Anyag;Megjegyzés;Forrás");
 
   const titleItem = document.getElementById("title-item");
   const tR = titleItem.getBoundingClientRect();
 
+  const titleName = getTitleTextRaw() || "Felirat";
+
   rows.push([
     "Felirat",
-    csvEsc(normalizeEllipsisSpacing(getTitleTextRaw() || "Felirat")),
-    ((tR.width  * pxToCmX).toFixed(2)).replace(".", ","),
-    ((tR.height * pxToCmY).toFixed(2)).replace(".", ","),
+    csvEsc(titleName),
+    ((tR.width  / ppcm).toFixed(2)).replace(".", ","),
+    ((tR.height / ppcm).toFixed(2)).replace(".", ","),
     matKey,
-    mat.titleColor,
-    csvEsc("font:AlwaysInMyHeart (FIX)")
+    csvEsc("Ékezetek/betűrészek gyártáskor forrasztva, egybe."),
+    csvEsc("font:AlwaysInMyHeart (anyag kitöltés)")
   ].join(";"));
 
   const icons = document.querySelectorAll("#items-layer .icon-item");
@@ -676,10 +855,10 @@ function exportCsv() {
     rows.push([
       "Ikon",
       csvEsc(name),
-      ((r.width  * pxToCmX).toFixed(2)).replace(".", ","),
-      ((r.height * pxToCmY).toFixed(2)).replace(".", ","),
+      ((r.width  / ppcm).toFixed(2)).replace(".", ","),
+      ((r.height / ppcm).toFixed(2)).replace(".", ","),
       matKey,
-      mat.iconEngrave,
+      csvEsc("Gravírozott dekor"),
       csvEsc(el.dataset.src || "")
     ].join(";"));
   });
