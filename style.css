@@ -56,7 +56,7 @@ html, body {
   margin-bottom: 10px;
 }
 
-/* JAVÍTÁS: textarea támogatás */
+/* textarea */
 #title-input {
   width: 100%;
   padding: 7px 8px;
@@ -181,6 +181,7 @@ html, body {
   max-height: calc(100% - 40px);
 }
 
+/* CANVAS */
 #canvas {
   position: relative;
   width: min(72vw, 980px);
@@ -188,8 +189,14 @@ html, body {
   overflow: hidden;
   box-shadow: 0 6px 18px rgba(0,0,0,0.2);
 
+  /* Anyag presetet a JS állítja */
   --mat-texture: url("assets/textures/birch.png");
-  --engrave: #8a6a3b;
+
+  /* FELIRAT (kivágott anyag-szín) */
+  --title-color: #e8d7b0; /* nyír alap */
+
+  /* IKONOK (gravír szín) */
+  --icon-engrave: #7a4a1e; /* nyír gravír alap */
 }
 
 #wall-layer {
@@ -222,18 +229,23 @@ html, body {
   outline-offset: 3px;
 }
 
-/* felirat */
+/* felirat pozíció */
 .title-item { left: 50%; top: 50%; transform: translate(-50%, -50%); }
 
-/* JAVÍTÁS: multiline */
+/* FELIRAT: FIX betűméret + ENTER sortörés
+   (szándékosan NINCS JS-es kicsinyítés) */
 .engrave-text {
   font-family: "AlwaysInMyHeart", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 96px;
+  font-size: 96px;       /* FIX */
   line-height: 1.05;
-  white-space: pre-line;     /* ENTER sortörés */
-  text-align: center;        /* 2 sor középre */
-  color: var(--engrave);
-  text-shadow: 0 1px 1px rgba(0,0,0,0.25);
+  white-space: pre-line; /* ENTER */
+  text-align: center;
+  color: var(--title-color);
+
+  /* minimál „kivágott” mélység érzet (nem gravír!) */
+  text-shadow:
+    0 1px 0 rgba(0,0,0,0.10),
+    0 2px 2px rgba(0,0,0,0.10);
 }
 
 /* ikon itemben az inline svg */
@@ -241,14 +253,29 @@ html, body {
   display: block;
   width: 100%;
   height: 100%;
-  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.25));
 }
 
-/* SVG felirat wrap (ha később SVG sablont használsz) */
-.title-svg-wrap svg { display: block; width: auto; height: auto; }
+/* ikonkhoz adunk egy nagyon enyhe árnyékot */
+.icon-item svg {
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.12));
+}
 
-/* export közben ne legyen kijelölés keret */
+/* Segédvonalak (fal-rész kijelölése) */
+.wall-guide {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 1px dashed rgba(0,0,0,0.25);
+  z-index: 3;
+  pointer-events: none;
+}
+.wall-guide.top { top: 12%; }
+.wall-guide.bottom { top: 88%; }
+
+/* export közben ne legyen kijelölés keret + segédvonal */
 .exporting .item.selected { outline: none !important; }
+.exporting .wall-guide { display: none !important; }
 
 /* Reszponzív */
 @media (max-width: 900px) {
