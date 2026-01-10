@@ -56,7 +56,7 @@ html, body {
   margin-bottom: 10px;
 }
 
-/* textarea támogatás */
+/* textarea */
 #title-input {
   width: 100%;
   padding: 7px 8px;
@@ -131,11 +131,13 @@ html, body {
   justify-content: center;
 }
 
+/* preview ikonok: legyenek sötétek, de ne full fekete pacák */
 .pattern-btn img {
   max-width: 85%;
   max-height: 85%;
   object-fit: contain;
-  filter: brightness(0) saturate(100%);
+  filter: brightness(0) saturate(100%) contrast(1.05);
+  opacity: 0.9;
 }
 
 .hint-text { margin-top: 6px; font-size: 11px; color: #777; }
@@ -188,16 +190,11 @@ html, body {
   overflow: hidden;
   box-shadow: 0 6px 18px rgba(0,0,0,0.2);
 
-  /* Anyag preset (JS állítja) */
-  --mat-texture: url("assets/textures/birch.png");
   --engrave: #7a4a1e;
-  --engrave-opacity: 0.70;
-  --engrave-blend: multiply;
   --engrave-shadow: rgba(0,0,0,0.12);
 
-  /* Felirat kitöltés (JS állítja) */
-  --title-fill: url("assets/textures/birch.png");
   --title-shadow: rgba(0,0,0,0.18);
+  --title-texture-src: "assets/textures/birch.png";
 }
 
 #wall-layer {
@@ -208,15 +205,14 @@ html, body {
   z-index: 1;
 }
 
-/* Kalibráció overlay (alapesetben rejtve) */
+/* Kalibráció overlay */
 #calibration-layer {
   position: absolute;
   inset: 0;
   z-index: 3;
-  display: none; /* csak kalibráció módban */
+  display: none;
   pointer-events: none;
 }
-
 #calibration-layer.active { display: block; }
 
 .calib-handle {
@@ -227,7 +223,6 @@ html, body {
   pointer-events: auto;
   cursor: ns-resize;
 }
-
 .calib-handle::before {
   content: "";
   position: absolute;
@@ -239,7 +234,6 @@ html, body {
   background: rgba(20,20,20,0.85);
   box-shadow: 0 2px 8px rgba(0,0,0,0.22);
 }
-
 .calib-handle::after {
   content: "";
   position: absolute;
@@ -267,38 +261,15 @@ html, body {
   user-select: none;
   touch-action: none;
 }
-
 .item:active { cursor: grabbing; }
-
 .item.selected {
   outline: 1px dashed rgba(0,0,0,0.55);
   outline-offset: 3px;
 }
 
-/* felirat */
+/* Felirat */
 .title-item { left: 50%; top: 50%; transform: translate(-50%, -50%); }
-
-/* multiline + ANYAG kitöltés (nem gravír) */
-.engrave-text {
-  font-family: "AlwaysInMyHeart", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 96px; /* JS felülírja px-ben a valós cm-hez */
-  line-height: 1.05;
-  white-space: pre-line;
-  text-align: center;
-
-  /* Anyag kitöltés */
-  color: transparent;
-  background-image: var(--title-fill);
-  background-size: cover;
-  background-position: center;
-  -webkit-background-clip: text;
-  background-clip: text;
-
-  /* finom térhatás */
-  text-shadow:
-    0.6px 0.8px 0 var(--title-shadow),
-    -0.3px 0.4px 0 rgba(0,0,0,0.08);
-}
+.title-svg { display: block; pointer-events: none; }
 
 /* ikon itemben az inline svg */
 .item svg {
@@ -307,14 +278,14 @@ html, body {
   height: 100%;
 }
 
-/* ikonok gravír “keverés” */
+/* ikonok gravír: tömör, NINCS opacity+blend */
 .icon-item {
-  opacity: var(--engrave-opacity);
-  mix-blend-mode: var(--engrave-blend);
+  opacity: 1;
+  mix-blend-mode: normal;
   filter: drop-shadow(0.6px 0.8px 0 var(--engrave-shadow));
 }
 
-/* export közben ne legyen kijelölés keret + kalibráció */
+/* export közben */
 .exporting .item.selected { outline: none !important; }
 .exporting #calibration-layer { display: none !important; }
 

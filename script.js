@@ -1,39 +1,28 @@
 /*****************************************************************
- * FELIRAT LÁTVÁNYTERVEZŐ – v1.3 (KOMÓD-KALIBRÁCIÓ)
+ * FELIRAT LÁTVÁNYTERVEZŐ – v1.4 (SVG MASK + TEXT→PATH)
  * - Referencia: KOMÓD magasság = 70 cm (kalibrálható háttérképenként)
- * - Felirat = anyagszín (nyír/hdf), NEM gravír
- * - Ikonok = gravír (anyagfüggő szín + opacity + blend)
+ * - Felirat: SVG mask (textúra a PATH-on belül), TEXT→PATH (B)
+ * - Ikonok: gravír (szín + finom árnyék), NINCS opacity+blend alapból
  * - ENTER új sor: betűméret nem csökken
  * - Kalibráció overlay csak bekapcsolva látszik, exportban sosem
  * - Sablon: „ …” előtt szóköz
- * - Megjegyzés: gyártáskor az ékezetek és külön részek össze lesznek forrasztva
  *****************************************************************/
 
-const CABINET_HEIGHT_CM = 70; // fix referencia
-
-// Felirat betűmagasság (valós cm). ENTER nem kicsinyít: ez fix marad.
-const TITLE_LETTER_CM = 11.0;
-
-// Ikon alap magasság (valós cm)
+const CABINET_HEIGHT_CM = 70;
+const TITLE_LETTER_CM = 11.0;   // valós (cm)
 const ICON_BASE_CM = 12.0;
 
-// Anyag preset (ikon gravír)
+// Anyag preset
 const MATERIALS = {
   birch: {
-    textureUrl: "assets/textures/birch.png",
-    titleFill:  "assets/textures/birch.png",
+    titleTexture: "assets/textures/birch.png",
     engrave: "#7A4A1E",
-    opacity: 0.70,
-    blend: "multiply",
     shadow: "rgba(0,0,0,0.12)",
     titleShadow: "rgba(0,0,0,0.18)"
   },
   hdf: {
-    textureUrl: "assets/textures/hdf-white.png",
-    titleFill:  "__WHITE__", // speciális: sima fehér
+    titleTexture: "assets/textures/hdf-white.png",
     engrave: "#1E1E1E",
-    opacity: 0.86,
-    blend: "multiply",
     shadow: "rgba(0,0,0,0.14)",
     titleShadow: "rgba(0,0,0,0.18)"
   }
@@ -56,7 +45,9 @@ let activeWallKey = "white";
 let calibrating = false;
 let calibDrag = null;
 
-document.addEventListener("DOMContentLoaded", () => {
+let titleFont = null; // opentype.js font
+
+document.addEventListener("DOMContentLoaded", async () => {
   initWall();
   initMaterial();
   initTitle();
@@ -70,9 +61,13 @@ document.addEventListener("DOMContentLoaded", () => {
   applyWall("white");
   applyMaterial("birch");
 
-  // betöltjük a mentett skálát, ha van
   syncScaleUi();
-  applyTitleLetterSize();
+
+  // Font betöltés (B megoldás alapja)
+  await loadTitleFont();
+
+  // első render
+  renderTitleSvg();
   centerTitle();
   updateTitleSizeLabel();
 
@@ -80,9 +75,8 @@ document.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("resize", () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
-      applyTitleLetterSize();
+      renderTitleSvg();
       updateTitleSizeLabel();
-      // ikonok mérete px-ben fix marad, de cm-kiírás/frissítés a skálával lesz pontos
     }, 120);
   });
 });
@@ -98,10 +92,7 @@ function getPointer(e) {
 }
 
 function canvasEl() { return document.getElementById("canvas"); }
-
 function canvasRect() { return canvasEl().getBoundingClientRect(); }
-
-function isFileProtocol() { return window.location.protocol === "file:"; }
 
 function setSelected(el) {
   if (selectedItem) selectedItem.classList.remove("selected");
@@ -109,14 +100,24 @@ function setSelected(el) {
   if (selectedItem) selectedItem.classList.add("selected");
 }
 
-function getLinesCount(text) {
-  const t = String(text || "").replace(/\r\n/g, "\n");
-  return Math.max(1, t.split("\n").length);
-}
-
 function getTitleTextRaw() {
   const el = document.getElementById("title-input");
   return (el?.value ?? "").replace(/\r\n/g, "\n");
+}
+
+function getLines(text) {
+  const t = String(text || "").replace(/\r\n/g, "\n");
+  const lines = t.split("\n");
+  return lines.length ? lines : ["Felirat"];
+}
+
+// „.../… ” előtti szóköz szépítése
+function normalizeEllipsisSpacing(text) {
+  const s = String(text || "");
+  return s
+    .replace(/(\S)(\.\.\.|…)/g, "$1 $2")
+    .replace(/\s+(…)/g, " $1")
+    .replace(/\s+(\.\.\.)/g, " $1");
 }
 
 /*****************************************************************
@@ -129,9 +130,7 @@ function storageKeyForWall(wallKey) {
 function getPxPerCm() {
   const raw = localStorage.getItem(storageKeyForWall(activeWallKey));
   const n = raw ? Number(raw) : NaN;
-  // ha nincs kalibráció: egy óvatos default (ne legyen óriás)
   if (!isFinite(n) || n <= 0) {
-    // default: a teljes vászon magasságát kb. 220 cm-nek vesszük
     const r = canvasRect();
     return r.height / 220;
   }
@@ -145,8 +144,7 @@ function setPxPerCm(ppcm) {
 function syncScaleUi() {
   const out = document.getElementById("scale-out");
   if (!out) return;
-  const ppcm = getPxPerCm();
-  out.textContent = ppcm.toFixed(2);
+  out.textContent = getPxPerCm().toFixed(2);
 }
 
 /*****************************************************************
@@ -160,21 +158,15 @@ function initWall() {
 
 function applyWall(key) {
   activeWallKey = key || "white";
-
   const wallLayer = document.getElementById("wall-layer");
   if (!wallLayer) return;
 
   const url = WALLS[activeWallKey] || WALLS.white;
   wallLayer.style.backgroundImage = `url("${url}")`;
 
-  // skála UI frissül
   syncScaleUi();
-
-  // új falnál is legyen jó a betűméret (ppcm változhat)
-  applyTitleLetterSize();
+  renderTitleSvg();
   updateTitleSizeLabel();
-
-  // ha kalibráció módban vagyunk, a jelölők maradnak a helyükön (px-ben)
 }
 
 /*****************************************************************
@@ -190,65 +182,75 @@ function applyMaterial(matKey) {
   const canvas = canvasEl();
   const mat = MATERIALS[matKey] || MATERIALS.birch;
 
-  // Ikon gravír preset
   canvas.style.setProperty("--engrave", mat.engrave);
-  canvas.style.setProperty("--engrave-opacity", String(mat.opacity));
-  canvas.style.setProperty("--engrave-blend", mat.blend);
   canvas.style.setProperty("--engrave-shadow", mat.shadow);
-
-  // Felirat (anyag kitöltés, nem gravír)
-  if (mat.titleFill === "__WHITE__") {
-    // sima fehér kitöltés
-    canvas.style.setProperty("--title-fill", "linear-gradient(#ffffff, #ffffff)");
-  } else {
-    canvas.style.setProperty("--title-fill", `url("${mat.titleFill}")`);
-  }
   canvas.style.setProperty("--title-shadow", mat.titleShadow);
 
-  // ikonok szín
+  // NYERS útvonal (SVG image href-hez)
+  canvas.style.setProperty("--title-texture-src", `"${mat.titleTexture}"`);
+
+  // ikonok színezése (egyszín gravír)
   document.querySelectorAll("#items-layer .icon-item").forEach(el => {
     applySvgEngraveColor(el, mat.engrave);
     el.dataset.material = matKey;
     el.dataset.engrave = mat.engrave;
   });
 
-  // felirat meta
+  // felirat meta + rerender
   const title = document.getElementById("title-item");
-  if (title) {
-    title.dataset.material = matKey;
-  }
+  if (title) title.dataset.material = matKey;
+
+  renderTitleSvg();
 }
 
 /*****************************************************************
- * Felirat (TEXT + ENTER törés + FIX betűmagasság cm)
+ * Felirat – B: TEXT→PATH + SVG MASK
  *****************************************************************/
+async function loadTitleFont() {
+  // opentype.js kötelező
+  if (typeof opentype === "undefined") {
+    alert("Hiányzik az opentype.js (CDN). Ellenőrizd az index.html-ben a script sort.");
+    return;
+  }
+
+  const fontUrl = "AlwaysInMyHeart.ttf";
+
+  titleFont = await new Promise((resolve, reject) => {
+    opentype.load(fontUrl, (err, font) => {
+      if (err) reject(err);
+      else resolve(font);
+    });
+  }).catch(err => {
+    console.error(err);
+    alert("Nem sikerült betölteni a betűtípust: AlwaysInMyHeart.ttf (ellenőrizd a fájlt a repo rootban)");
+    return null;
+  });
+
+  return titleFont;
+}
+
 function initTitle() {
   const input = document.getElementById("title-input");
   const tpl = document.getElementById("template-select");
   const titleItem = document.getElementById("title-item");
-  const titleText = document.getElementById("title-text");
   const centerBtn = document.getElementById("center-title-btn");
 
-  if (!input || !titleItem || !titleText) return;
+  if (!input || !titleItem) return;
 
   if (!input.value) input.value = "Felirat";
-  titleText.textContent = normalizeEllipsisSpacing(input.value);
 
   if (tpl) {
     tpl.addEventListener("change", () => {
       if (!tpl.value) return;
       input.value = tpl.value;
-      titleText.textContent = normalizeEllipsisSpacing(tpl.value);
       tpl.value = "";
-      applyTitleLetterSize();
+      renderTitleSvg();
       updateTitleSizeLabel();
     });
   }
 
   input.addEventListener("input", () => {
-    titleText.textContent = normalizeEllipsisSpacing(getTitleTextRaw() || "Felirat");
-    // ENTER nem csökkent: betűméret fix, csak label frissül
-    applyTitleLetterSize();
+    renderTitleSvg();
     updateTitleSizeLabel();
   });
 
@@ -260,33 +262,112 @@ function initTitle() {
   }
 
   makeDraggable(titleItem);
-
-  requestAnimationFrame(() => {
-    applyTitleLetterSize();
-    updateTitleSizeLabel();
-  });
 }
 
-// „.../… ” előtti szóköz szépítése
-function normalizeEllipsisSpacing(text) {
-  const s = String(text || "");
-  // 1) ha "nem volt…" -> "nem volt …"
-  // 2) ha "nem volt..." -> "nem volt ..."
-  return s
-    .replace(/(\S)(\.\.\.|…)/g, "$1 $2")
-    .replace(/\s+(…)/g, " $1")
-    .replace(/\s+(\.\.\.)/g, " $1");
+function getTitleTextureSrc() {
+  const canvas = canvasEl();
+  if (!canvas) return "assets/textures/birch.png";
+  const raw = getComputedStyle(canvas).getPropertyValue("--title-texture-src").trim();
+  // raw tipikusan: "assets/textures/birch.png"
+  return raw.replace(/^"+|"+$/g, "");
 }
 
-function applyTitleLetterSize() {
-  const titleText = document.getElementById("title-text");
-  if (!titleText) return;
+function renderTitleSvg() {
+  const host = document.getElementById("title-svg");
+  const titleItem = document.getElementById("title-item");
+  if (!host || !titleItem) return;
+
+  const textRaw = normalizeEllipsisSpacing(getTitleTextRaw() || "Felirat");
+  const lines = getLines(textRaw);
 
   const ppcm = getPxPerCm();
-  const px = TITLE_LETTER_CM * ppcm;
+  const fontSizePx = clamp(TITLE_LETTER_CM * ppcm, 10, 600);
+  const lineHeight = 1.05;
+  const lineAdvance = fontSizePx * lineHeight;
 
-  // Fix betűméret px-ben – nem kalibrációs “mérés”, hanem fix cm->px
-  titleText.style.fontSize = `${clamp(px, 10, 600)}px`;
+  // Ha nincs font (még nem töltött be), akkor ne villogjon: hagyjunk placeholdert
+  if (!titleFont) {
+    host.innerHTML = `<div style="font-family:AlwaysInMyHeart,system-ui;font-size:${fontSizePx}px;line-height:${lineHeight};white-space:pre-line;text-align:center;">${escapeHtml(textRaw)}</div>`;
+    return;
+  }
+
+  // PATH-ok összerakása + bbox számítás
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const paths = [];
+
+  // A baseline: opentype y tengelye felfelé nő, de getPath kezeli a normál koordinátát
+  // Mi egyszerűen egymás alá tesszük a sorokat.
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    const y = (i + 1) * lineAdvance; // baseline kb így ad jó eredményt
+
+    // üres sor: csak advance
+    if (!line.trim()) continue;
+
+    const p = titleFont.getPath(line, 0, y, fontSizePx);
+    const d = p.toPathData(3);
+    paths.push({ d });
+
+    const bb = p.getBoundingBox();
+    minX = Math.min(minX, bb.x1);
+    minY = Math.min(minY, bb.y1);
+    maxX = Math.max(maxX, bb.x2);
+    maxY = Math.max(maxY, bb.y2);
+  }
+
+  // ha minden sor üres volt
+  if (!isFinite(minX)) {
+    minX = 0; minY = 0; maxX = fontSizePx * 2; maxY = lineAdvance;
+  }
+
+  const pad = Math.max(2, fontSizePx * 0.08);
+  const vbX = minX - pad;
+  const vbY = minY - pad;
+  const vbW = (maxX - minX) + pad * 2;
+  const vbH = (maxY - minY) + pad * 2;
+
+  // viewBox alapú méretezés: a title-item doboza a path bbox-hoz igazodik
+  // Így a drag box is valós “anyag darab” lesz.
+  titleItem.style.width = `${vbW}px`;
+  titleItem.style.height = `${vbH}px`;
+  host.style.width = "100%";
+  host.style.height = "100%";
+
+  const textureSrc = getTitleTextureSrc();
+  const shadow = getComputedStyle(canvasEl()).getPropertyValue("--title-shadow").trim() || "rgba(0,0,0,0.18)";
+
+  const svg = `
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="${vbW}" height="${vbH}"
+     viewBox="${vbX} ${vbY} ${vbW} ${vbH}"
+     preserveAspectRatio="xMidYMid meet">
+
+  <defs>
+    <mask id="titleMask" maskUnits="userSpaceOnUse">
+      <rect x="${vbX}" y="${vbY}" width="${vbW}" height="${vbH}" fill="black"/>
+      ${paths.map(p => `<path d="${p.d}" fill="white"/>`).join("\n")}
+    </mask>
+
+    <filter id="titleShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0.6" dy="0.9" stdDeviation="0.6" flood-color="${shadow}" flood-opacity="1"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#titleShadow)">
+    <image href="${textureSrc}"
+           x="${vbX}" y="${vbY}" width="${vbW}" height="${vbH}"
+           preserveAspectRatio="xMidYMid slice"
+           mask="url(#titleMask)"/>
+  </g>
+</svg>`;
+
+  host.innerHTML = svg;
+
+  // ha a title-item még középre van translate-tel, hagyjuk; ha már dragelted, úgyis átvált left/top-ra
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 }
 
 /*****************************************************************
@@ -298,10 +379,11 @@ function centerTitle() {
   if (!canvas || !title) return;
 
   const rC = canvas.getBoundingClientRect();
-  const rT = title.getBoundingClientRect();
+  const w = title.offsetWidth || 0;
+  const h = title.offsetHeight || 0;
 
-  const left = (rC.width - rT.width) / 2;
-  const top  = (rC.height - rT.height) / 2;
+  const left = (rC.width - w) / 2;
+  const top  = (rC.height - h) / 2;
 
   title.style.left = `${left}px`;
   title.style.top  = `${top}px`;
@@ -328,10 +410,6 @@ function initIconPanel() {
     btn.addEventListener("click", async () => {
       const src = btn.dataset.src;
       const alt = btn.dataset.alt || "Ikon";
-
-      if (isFileProtocol()) {
-        alert("Offline (file://) módban a böngésző letilthatja az ikonok betöltését. GitHub Pages-en működik. Ha kéred, adok egy 1 perces megoldást helyi szerverre.");
-      }
 
       try {
         const svgText = await fetchSvg(src);
@@ -379,7 +457,6 @@ function addIcon(svgText, meta) {
 
   const svg = el.querySelector("svg");
 
-  // Ikon valós cm -> px (komód alapján)
   const ppcm = getPxPerCm();
   const size = computeSvgSizePx(svg, ppcm, ICON_BASE_CM);
 
@@ -407,7 +484,6 @@ function computeSvgSizePx(svg, pxPerCm, targetHeightCm) {
     if (parts.length === 4 && parts[3] > 0) aspect = parts[2] / parts[3];
   }
 
-  // ha az SVG-ben van explicit cm/mm/px, azt tiszteljük
   const wAttr = svg?.getAttribute("width")  || "";
   const hAttr = svg?.getAttribute("height") || "";
 
@@ -659,7 +735,6 @@ function initCalibration() {
 
   if (!toggleBtn || !saveBtn || !cancelBtn || !layer || !topH || !botH) return;
 
-  // alap pozíciók: képernyőn középtájék, hogy gyors legyen beállítani
   function placeDefaultHandles() {
     const r = canvasRect();
     const y1 = r.height * 0.55;
@@ -678,7 +753,6 @@ function initCalibration() {
       saveBtn.style.display = "";
       cancelBtn.style.display = "";
       toggleBtn.textContent = "Kalibrálás: aktív";
-      // ha már van mentett skála, akkor is legyen értelmes helyen
       placeDefaultHandles();
     } else {
       layer.classList.remove("active");
@@ -717,11 +791,9 @@ function initCalibration() {
     setPxPerCm(ppcm);
     syncScaleUi();
 
-    // frissítjük a valós méreteket
-    applyTitleLetterSize();
+    renderTitleSvg();
     updateTitleSizeLabel();
 
-    // kilépünk
     calibrating = false;
     layer.classList.remove("active");
     saveBtn.style.display = "none";
@@ -730,28 +802,24 @@ function initCalibration() {
     calibDrag = null;
   });
 
-  // Drag a handle-ökhöz
   function hookHandle(handleEl) {
     handleEl.addEventListener("mousedown", (e) => {
       e.preventDefault();
       if (!calibrating) return;
-      calibDrag = { el: handleEl, startY: getPointer(e).y };
+      calibDrag = { el: handleEl };
     });
 
     handleEl.addEventListener("touchstart", (e) => {
       e.preventDefault();
       if (!calibrating) return;
-      calibDrag = { el: handleEl, startY: getPointer(e).y };
+      calibDrag = { el: handleEl };
     }, { passive: false });
   }
 
   hookHandle(topH);
   hookHandle(botH);
 
-  document.addEventListener("mousemove", (e) => {
-    if (!calibDrag) return;
-    onCalibMove(e);
-  });
+  document.addEventListener("mousemove", (e) => { if (calibDrag) onCalibMove(e); });
   document.addEventListener("touchmove", (e) => {
     if (!calibDrag) return;
     onCalibMove(e);
@@ -764,8 +832,8 @@ function initCalibration() {
   function onCalibMove(e) {
     const r = canvasRect();
     const p = getPointer(e);
-
     const canvasTop = r.top;
+
     let y = p.y - canvasTop;
     y = clamp(y, 0, r.height);
 
@@ -815,7 +883,7 @@ function initExport() {
 }
 
 /*****************************************************************
- * CSV export (valós cm) – komód skálával
+ * CSV export (valós cm)
  *****************************************************************/
 function initCsvExport() {
   const btn = document.getElementById("export-csv-btn");
@@ -824,18 +892,15 @@ function initCsvExport() {
 }
 
 function exportCsv() {
-  const cR = canvasRect();
   const ppcm = getPxPerCm();
 
   const matKey = document.querySelector('input[name="material"]:checked')?.value || "birch";
-  const mat = MATERIALS[matKey] || MATERIALS.birch;
 
   const rows = [];
   rows.push("Típus;Név;Szélesség (cm);Magasság (cm);Anyag;Megjegyzés;Forrás");
 
   const titleItem = document.getElementById("title-item");
   const tR = titleItem.getBoundingClientRect();
-
   const titleName = getTitleTextRaw() || "Felirat";
 
   rows.push([
@@ -845,7 +910,7 @@ function exportCsv() {
     ((tR.height / ppcm).toFixed(2)).replace(".", ","),
     matKey,
     csvEsc("Ékezetek/betűrészek gyártáskor forrasztva, egybe."),
-    csvEsc("font:AlwaysInMyHeart (anyag kitöltés)")
+    csvEsc("font:AlwaysInMyHeart → PATH + SVG mask (anyagtextúra)")
   ].join(";"));
 
   const icons = document.querySelectorAll("#items-layer .icon-item");
