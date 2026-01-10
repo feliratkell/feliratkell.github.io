@@ -42,7 +42,7 @@
         </label>
 
         <div class="hint-text">
-          Anyag váltás: textúra (birch / hdf-white) + gravír szín.
+          Felirat: kivágott anyag-szín. Ikonok: gravír.
         </div>
       </section>
 
@@ -59,12 +59,11 @@
         </select>
 
         <label class="field-label" for="title-input">Szöveg</label>
-        <!-- JAVÍTÁS: textarea, ENTER sortörés -->
         <textarea id="title-input" placeholder="Írd ide a feliratot..." rows="2"></textarea>
 
         <div class="field-row">
           <div class="mini">
-            <div class="mini-label">Felirat magasság</div>
+            <div class="mini-label">Felirat magasság (falhoz viszonyítva)</div>
             <div class="mini-value"><span id="title-size">—</span> cm</div>
           </div>
           <button id="center-title-btn" class="secondary-btn" type="button">
@@ -73,7 +72,12 @@
         </div>
 
         <div class="hint-text">
-          A felirat húzható. Méretezés nincs.
+          A felirat húzható. Betűméret FIX. Új sor esetén nem kicsinyül.
+        </div>
+
+        <div class="hint-text">
+          Megjegyzés: A végső gyártáskor az ékezetek és különálló betűrészek egybe lesznek forrasztva,
+          így a felirat egységes darabként készül el.
         </div>
       </section>
 
@@ -124,6 +128,10 @@
                 <span id="title-text" class="engrave-text">Felirat</span>
               </div>
             </div>
+
+            <!-- Segédvonalak (nem exportoljuk, csak arányhoz) -->
+            <div class="wall-guide top" aria-hidden="true"></div>
+            <div class="wall-guide bottom" aria-hidden="true"></div>
           </div>
         </div>
       </div>
