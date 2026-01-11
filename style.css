@@ -1,236 +1,324 @@
 /* style.css */
+
+/* Alap */
 *,
 *::before,
 *::after { box-sizing: border-box; }
 
 html, body {
-  height: 100%;
   margin: 0;
+  padding: 0;
+  height: 100%;
   background: #f3f3f3;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-.app {
-  height: 100%;
-  display: grid;
-  grid-template-columns: 360px 1fr;
+/* Betűtípus */
+@font-face {
+  font-family: "AlwaysInMyHeart";
+  src: url("AlwaysInMyHeart.ttf") format("truetype");
+  font-display: swap;
 }
 
+/* Layout */
+#app { display: flex; height: 100vh; }
+
+/* Sidebar */
 .sidebar {
-  height: 100%;
-  overflow: auto;
-  background: #ffffff;
-  border-right: 1px solid #e7e7e7;
-  padding: 16px;
-}
-
-.sidebar h1 {
-  margin: 0 0 12px 0;
-  font-size: 22px;
-}
-
-.panel {
-  border: 1px solid #ededed;
-  border-radius: 12px;
-  padding: 12px;
-  margin: 10px 0;
+  width: 320px;
+  min-width: 320px;
+  max-width: 360px;
+  padding: 16px 18px;
+  border-right: 1px solid #ddd;
   background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
 }
 
-.panel h2 {
-  margin: 0 0 10px 0;
-  font-size: 16px;
+.app-title { font-size: 20px; margin: 0 0 6px; }
+
+.panel-section {
+  padding: 12px 10px;
+  background: #fafafa;
+  border: 1px solid #e3e3e3;
 }
 
-.row {
+.panel-section h2 { font-size: 15px; margin: 0 0 10px; }
+
+.field-label { display: block; font-size: 13px; margin-bottom: 4px; }
+
+.select {
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid #ccc;
+  background: #fff;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+/* textarea */
+#title-input {
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid #ccc;
+  font-size: 14px;
+  margin-bottom: 10px;
+  resize: vertical;
+  min-height: 56px;
+  line-height: 1.2;
+}
+
+.radio-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 13px;
+  margin: 6px 0;
+  cursor: pointer;
+}
+
+.field-row {
   display: flex;
   gap: 10px;
   align-items: center;
 }
 
-.stack {
+.mini {
+  flex: 1;
+  border: 1px solid #ddd;
+  background: #fff;
+  padding: 8px 10px;
+}
+
+.mini-label { font-size: 11px; color: #666; margin-bottom: 2px; }
+.mini-value { font-size: 14px; font-weight: 600; }
+
+.range { width: 100%; }
+
+/* Kategóriák */
+.pattern-category { margin-top: 8px; }
+.pattern-category-header {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 4px 2px;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: 100%;
-}
-
-.stack > span,
-.row > span {
-  font-size: 12px;
-  color: #333;
-  min-width: 64px;
-}
-
-input[type="text"] {
-  width: 100%;
-  padding: 10px 10px;
-  border-radius: 10px;
-  border: 1px solid #e2e2e2;
-  outline: none;
-}
-
-select {
-  width: 100%;
-  padding: 10px 10px;
-  border-radius: 10px;
-  border: 1px solid #e2e2e2;
-  background: #fff;
-  outline: none;
-}
-
-input[type="range"] {
-  width: 100%;
-}
-
-.grow { flex: 1; }
-
-.btn {
-  border: 1px solid #e2e2e2;
-  background: #fff;
-  padding: 10px 12px;
-  border-radius: 10px;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
 }
+.pattern-category-arrow { font-size: 11px; transition: transform 0.15s ease; }
+.pattern-category-body { margin-top: 6px; }
 
-.btn:hover { background: #fafafa; }
+.pattern-category.collapsed .pattern-category-body { display: none; }
+.pattern-category.collapsed .pattern-category-arrow { transform: rotate(-90deg); }
 
-.btn.primary {
-  border-color: #c31f1f;
-  background: #c31f1f;
-  color: #fff;
-}
-
-.btn.primary:hover { filter: brightness(0.96); }
-
-.btn.ghost {
-  background: transparent;
-}
-
-.hint {
-  margin: 10px 0 0 0;
-  font-size: 12px;
-  color: #666;
-  line-height: 1.35;
-}
-
-.pill {
-  border: 1px solid #ededed;
-  border-radius: 12px;
-  padding: 8px 10px;
-  min-width: 92px;
-  background: #fff;
-}
-
-.pill.wide { min-width: 160px; width: 100%; }
-
-.pillTitle {
-  font-size: 11px;
-  color: #666;
-}
-
-.pillValue {
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.hidden { display: none !important; }
-
-.foot {
-  padding: 14px 2px 4px;
-  color: #777;
-}
-
-/* STAGE */
-.stageWrap {
-  height: 100%;
-  overflow: hidden;
+.pattern-grid {
   display: grid;
-  place-items: center;
-  padding: 16px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
 }
 
-.stage {
+.pattern-btn {
+  width: 100%;
+  height: 70px;
+  border: 1px solid #ddd;
+  background: #fff;
+  padding: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pattern-btn img {
+  max-width: 85%;
+  max-height: 85%;
+  object-fit: contain;
+  filter: brightness(0) saturate(100%);
+}
+
+.hint-text { margin-top: 6px; font-size: 11px; color: #777; }
+
+/* Gombok */
+.primary-btn {
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  background: #232324;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  margin-top: 6px;
+}
+.primary-btn:hover { opacity: 0.92; }
+
+.secondary-btn {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #999;
+  background: #fff;
+  color: #232324;
+  font-size: 13px;
+  cursor: pointer;
+}
+.secondary-btn:hover { background: #f0f0f0; }
+
+/* Workspace */
+.workspace {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 18px;
+  overflow: auto;
+}
+
+.workspace-inner { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; }
+
+#canvas-wrapper {
+  max-width: calc(100% - 40px);
+  max-height: calc(100% - 40px);
+}
+
+/* VIEWPORT: itt történik a zoom/pan */
+#canvas-viewport {
   position: relative;
-  width: min(1200px, calc(100vw - 360px - 32px));
+  width: min(72vw, 980px);
   aspect-ratio: 4 / 3;
-  background: #ddd;
-  border-radius: 14px;
   overflow: hidden;
-  box-shadow: 0 10px 28px rgba(0,0,0,0.12);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.2);
+  background: transparent;
+  border-radius: 0;
+  /* üres falon pan-hoz */
+  touch-action: none;
+}
+
+/* A “világ” (DOM wrapper) mindig 1:1-ben van, csak transformáljuk */
+#canvas {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+
+  transform-origin: 0 0;
+  transform: translate(0px, 0px) scale(1);
+
+  /* Anyag preset (JS állítja) */
+  --engrave: #7a4a1e;
+  --engrave-opacity: 0.85;
+  --engrave-shadow: rgba(0,0,0,0.20);
+}
+
+#wall-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+
+  background-position: center;
+  background-repeat: no-repeat;
+  /* fontos: azonos kamera/pixel, clamp stabil → nem cover */
+  background-size: 100% 100%;
+}
+
+/* Kalibráció overlay (alapesetben rejtve) */
+#calibration-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: none; /* csak kalibráció módban */
+  pointer-events: none;
+}
+
+#calibration-layer.active { display: block; }
+
+.calib-handle {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 0;
+  pointer-events: auto;
+  cursor: ns-resize;
+}
+
+.calib-handle::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: -10px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(20,20,20,0.85);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.22);
+}
+
+.calib-handle::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -1px;
+  height: 2px;
+  background: rgba(20,20,20,0.55);
+}
+
+/* réteg: elemek */
+#items-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+
+/* közös item */
+.item {
+  position: absolute;
+  cursor: grab;
   user-select: none;
   touch-action: none;
 }
 
-.bgCanvas {
-  position: absolute;
-  inset: 0;
+.item:active { cursor: grabbing; }
+
+.item.selected {
+  outline: 1px dashed rgba(0,0,0,0.55);
+  outline-offset: 3px;
+}
+
+/* felirat */
+.title-item { left: 50%; top: 50%; transform: translate(-50%, -50%); }
+
+/* SVG felirat */
+.title-svg {
+  display: block;
+  overflow: visible;
+}
+
+/* ikon */
+.item svg {
+  display: block;
   width: 100%;
   height: 100%;
-  display: block;
 }
 
-.overlay {
-  position: absolute;
-  inset: 0;
-  pointer-events: none; /* csak a obj-k kapjanak */
+/* ikon gravír: stabil, export-barát (NINCS mix-blend) */
+.icon-item {
+  opacity: var(--engrave-opacity);
+  filter: drop-shadow(0.8px 1.0px 0 var(--engrave-shadow));
 }
 
-.obj {
-  position: absolute;
-  left: 62%;
-  top: 18%;
-  transform: translate(-50%, -50%);
-  pointer-events: auto;
-  cursor: grab;
+/* export közben ne legyen kijelölés keret + kalibráció */
+.exporting .item.selected { outline: none !important; }
+.exporting #calibration-layer { display: none !important; }
+
+/* Reszponzív */
+@media (max-width: 900px) {
+  .sidebar { width: 280px; min-width: 280px; }
+  #canvas-viewport { width: 100vw; max-width: 100vw; }
 }
-
-.obj:active { cursor: grabbing; }
-
-.objInner {
-  /* a “gravír” jelleg vizuálját a JS állítja be */
-  font-size: 80px; /* JS felülírja skálával */
-  line-height: 1.05;
-  white-space: pre-wrap;
-  padding: 2px 4px;
-  border-radius: 6px;
+@media (max-width: 900px) and (orientation: landscape) {
+  #canvas-viewport { height: calc(100vh - 40px); width: auto; max-height: calc(100vh - 40px); }
 }
-
-.textObj .objInner {
-  font-family: "Always In My Heart", "Segoe Script", "Brush Script MT", cursive;
-}
-
-/* CALIBRATION */
-.calibLayer {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.calibLine {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 2px;
-  height: 10px;
-  background: rgba(195,31,31,0.9);
-  transform-origin: top left;
-  border-radius: 2px;
-}
-
-.calibHandle {
-  position: absolute;
-  width: 34px;
-  height: 34px;
-  border-radius: 999px;
-  background: #c31f1f;
-  color: #fff;
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  pointer-events: auto;
-  cursor: grab;
-  box-shadow: 0 10px 18px rgba(0,0,0,0.22);
-}
-
-.calibHandle:active { cursor: grabbing; }
