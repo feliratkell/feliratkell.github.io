@@ -29,6 +29,26 @@
       </section>
 
       <section class="panel-section">
+        <h2>Nagyítás / zoom</h2>
+
+        <div class="field-row">
+          <input id="zoom-range" class="range" type="range" min="1" max="3" step="0.1" value="1" />
+          <div class="mini" style="max-width:92px;">
+            <div class="mini-label">Zoom</div>
+            <div class="mini-value"><span id="zoom-out">1.0</span>×</div>
+          </div>
+        </div>
+
+        <div class="field-row" style="margin-top:8px;">
+          <button id="zoom-reset-btn" class="secondary-btn" type="button">Reset</button>
+        </div>
+
+        <div class="hint-text">
+          Nagyításkor az <b>üres falon húzva</b> tudsz nézelődni (pan).
+        </div>
+      </section>
+
+      <section class="panel-section">
         <h2>Kalibráció (komód = 70 cm)</h2>
 
         <button id="calib-toggle-btn" class="secondary-btn" type="button">
@@ -70,7 +90,7 @@
         </label>
 
         <div class="hint-text">
-          Felirat = anyag (textúra), NEM gravír. Ikonok = gravír.
+          Felirat = anyag (textúra / fehér), NEM gravír. Ikonok = gravír.
         </div>
       </section>
 
@@ -145,39 +165,38 @@
     <main class="workspace">
       <div class="workspace-inner">
         <div id="canvas-wrapper">
-          <div id="canvas">
-            <!-- Zoom UI -->
-            <div id="zoom-controls" aria-hidden="false">
-              <div class="zoom-row">
-                <button class="zoom-btn" data-zoom="1">1×</button>
-                <button class="zoom-btn" data-zoom="1.5">1.5×</button>
-                <button class="zoom-btn" data-zoom="2">2×</button>
-                <button class="zoom-btn" data-zoom="3">3×</button>
-              </div>
-              <div class="zoom-row">
-                <button id="zoom-reset" class="zoom-btn secondary">Reset</button>
-                <div id="zoom-readout">1.0×</div>
-              </div>
-              <div class="zoom-hint">Zoomnál: üres falon húzva tudsz nézelődni.</div>
-            </div>
-
-            <!-- Transzformált tartalom -->
-            <div id="canvas-zoom">
+          <!-- zoom/pan a viewporton történik -->
+          <div id="canvas-viewport">
+            <div id="canvas">
               <div id="wall-layer"></div>
 
-              <!-- Kalibráció overlay -->
+              <!-- Kalibráció overlay (alapesetben rejtve, exportnál sem látszik) -->
               <div id="calibration-layer" aria-hidden="true">
                 <div id="calib-top" class="calib-handle" title="Komód teteje"></div>
                 <div id="calib-bottom" class="calib-handle" title="Komód alja"></div>
               </div>
 
               <div id="items-layer">
-                <div id="title-item" class="item title-item" tabindex="0">
-                  <span id="title-text" class="title-text">Felirat</span>
+                <div id="title-item" class="item title-item" tabindex="0" aria-label="Felirat">
+                  <!-- SVG textúra kitöltés: export-stabil -->
+                  <svg id="title-svg" class="title-svg" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <defs>
+                      <pattern id="title-pattern" patternUnits="objectBoundingBox" width="1" height="1">
+                        <image id="title-pattern-image" href="" x="0" y="0" width="1" height="1" preserveAspectRatio="xMidYMid slice"></image>
+                      </pattern>
+                    </defs>
+
+                    <text id="title-svg-text"
+                      x="50%" y="0"
+                      text-anchor="middle"
+                      dominant-baseline="hanging"
+                      xml:space="preserve">Felirat</text>
+                  </svg>
                 </div>
               </div>
-            </div><!-- /canvas-zoom -->
-          </div><!-- /canvas -->
+            </div>
+          </div>
+
         </div>
       </div>
     </main>

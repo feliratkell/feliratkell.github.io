@@ -1,34 +1,41 @@
 /*****************************************************************
- * FELIRAT LÁTVÁNYTERVEZŐ – v1.5 (STABIL TEXT + ZOOM + KOMÓD-KALIBRÁCIÓ)
+ * FELIRAT LÁTVÁNYTERVEZŐ – v1.4 (SVG FELIRAT + ZOOM/PAN + KOMÓD-KALIBRÁCIÓ)
  * - Referencia: KOMÓD magasság = 70 cm (kalibrálható háttérképenként)
- * - Felirat = anyag textúra (nyír/hdf), NEM gravír
- * - Ikonok = gravír (solid, no opacity/blend)
- * - ENTER új sor: betűméret nem csökken (fix 11 cm betűmagasság)
- * - Kalibráció overlay csak bekapcsolva látszik, exportban sosem
- * - Zoom: 1x/1.5x/2x/3x + reset, zoom után fókusz a kijelölt elemre
- * - Zoomnál üres falon drag = pan
- * - Sablon: „ …” előtt szóköz
+ * - Felirat SVG pattern kitöltés (textúra) / HDF = fehér → export stabil
+ * - Ikonok gravír: stabil, export-barát (nincs mix-blend-mode)
+ * - ENTER: betűméret nem csökken
+ * - Kalibráció csak külön módban látszik, exportban sosem
+ * - „ …” előtt szóköz
  *****************************************************************/
 
 const CABINET_HEIGHT_CM = 70;
+
+// Felirat betűmagasság (valós cm) – ez adja a “11 cm” érzetet a falon
 const TITLE_LETTER_CM = 11.0;
+
+// Ikon alap magasság (valós cm)
 const ICON_BASE_CM = 12.0;
 
+// Anyag preset
 const MATERIALS = {
   birch: {
-    titleFill: "assets/textures/birch.png",
+    titleMode: "texture",
+    titleTextureUrl: "assets/textures/birch.png",
     engrave: "#7A4A1E",
-    shadow: "rgba(0,0,0,0.18)",
-    titleShadow: "rgba(0,0,0,0.18)"
+    iconOpacity: 0.85,
+    iconShadow: "rgba(0,0,0,0.20)"
   },
   hdf: {
-    titleFill: "__WHITE__",
+    titleMode: "solid",
+    titleSolid: "#ffffff",
+    titleTextureUrl: "assets/textures/hdf-white.png", // (ha később mégis textúráznád)
     engrave: "#1E1E1E",
-    shadow: "rgba(0,0,0,0.22)",
-    titleShadow: "rgba(0,0,0,0.18)"
+    iconOpacity: 0.90,
+    iconShadow: "rgba(0,0,0,0.22)"
   }
 };
 
+// Falak
 const WALLS = {
   white: "assets/backgrounds/white.png",
   beige: "assets/backgrounds/beige.png",
@@ -45,11 +52,13 @@ let activeWallKey = "white";
 let calibrating = false;
 let calibDrag = null;
 
-let view = { zoom: 1, tx: 0, ty: 0 };
-let panState = null;
+let zoom = 1;
+let pan = { x: 0, y: 0 };
+let panDrag = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
   initWall();
+  initZoom();
   initMaterial();
   initTitle();
   initIconPanel();
@@ -58,33 +67,19 @@ document.addEventListener("DOMContentLoaded", async () => {
   initExport();
   initCsvExport();
   initCalibration();
-  initZoom();
+  initPanOnEmptyWall();
 
   applyWall("white");
-  applyMaterial("birch");
+  applyMaterial(getMaterialKey());
 
-  // Font betöltés után pontosabb a render + magasság (nem kötelező, de stabilabb)
-  try {
-    if (document.fonts?.load) {
-      await document.fonts.load('16px "AlwaysInMyHeart"');
-    }
-  } catch (_) {}
+  // Font betöltés megvárása → stabil méretek (GitHub/online és offline)
+  await safeLoadFont("AlwaysInMyHeart");
 
   syncScaleUi();
   applyTitleLetterSize();
+  syncTitleSvgPaint();
   centerTitle();
   updateTitleSizeLabel();
-
-  let resizeTimer = null;
-  window.addEventListener("resize", () => {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-      clampView();
-      applyView();
-      applyTitleLetterSize();
-      updateTitleSizeLabel();
-    }, 120);
-  });
 });
 
 /*****************************************************************
@@ -98,7 +93,7 @@ function getPointer(e) {
 }
 
 function canvasEl() { return document.getElementById("canvas"); }
-function zoomEl() { return document.getElementById("canvas-zoom"); }
+function viewportEl() { return document.getElementById("canvas-viewport"); }
 
 function canvasRect() { return canvasEl().getBoundingClientRect(); }
 
@@ -113,6 +108,20 @@ function getTitleTextRaw() {
   return (el?.value ?? "").replace(/\r\n/g, "\n");
 }
 
+function getMaterialKey() {
+  return document.querySelector('input[name="material"]:checked')?.value || "birch";
+}
+
+async function safeLoadFont(fontFamily) {
+  try {
+    if (!document.fonts || !document.fonts.load) return;
+    await Promise.race([
+      document.fonts.load(`16px "${fontFamily}"`),
+      new Promise(resolve => setTimeout(resolve, 1200))
+    ]);
+  } catch (_) {}
+}
+
 /*****************************************************************
  * Skála (px/cm) – háttérképenként mentve
  *****************************************************************/
@@ -124,6 +133,7 @@ function getPxPerCm() {
   const raw = localStorage.getItem(storageKeyForWall(activeWallKey));
   const n = raw ? Number(raw) : NaN;
   if (!isFinite(n) || n <= 0) {
+    // óvatos default, hogy ne legyen óriás
     const r = canvasRect();
     return r.height / 220;
   }
@@ -137,7 +147,8 @@ function setPxPerCm(ppcm) {
 function syncScaleUi() {
   const out = document.getElementById("scale-out");
   if (!out) return;
-  out.textContent = getPxPerCm().toFixed(2);
+  const ppcm = getPxPerCm();
+  out.textContent = ppcm.toFixed(2);
 }
 
 /*****************************************************************
@@ -151,6 +162,7 @@ function initWall() {
 
 function applyWall(key) {
   activeWallKey = key || "white";
+
   const wallLayer = document.getElementById("wall-layer");
   if (!wallLayer) return;
 
@@ -158,7 +170,119 @@ function applyWall(key) {
 
   syncScaleUi();
   applyTitleLetterSize();
+  syncTitleSvgPaint();
   updateTitleSizeLabel();
+
+  // falcsere után a pan maradhat, de biztonság kedvéért korrigáljuk
+  clampPanToBounds();
+  applyZoomTransform();
+}
+
+/*****************************************************************
+ * Zoom + Pan
+ *****************************************************************/
+function initZoom() {
+  const range = document.getElementById("zoom-range");
+  const out = document.getElementById("zoom-out");
+  const resetBtn = document.getElementById("zoom-reset-btn");
+
+  function setZoom(z) {
+    zoom = clamp(Number(z) || 1, 1, 3);
+    if (range) range.value = String(zoom);
+    if (out) out.textContent = zoom.toFixed(1);
+    clampPanToBounds();
+    applyZoomTransform();
+  }
+
+  if (range) {
+    range.addEventListener("input", () => setZoom(range.value));
+  }
+  if (resetBtn) {
+    resetBtn.addEventListener("click", () => {
+      pan = { x: 0, y: 0 };
+      setZoom(1);
+    });
+  }
+
+  setZoom(1);
+}
+
+function applyZoomTransform() {
+  const c = canvasEl();
+  if (!c) return;
+  c.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`;
+}
+
+function clampPanToBounds() {
+  // canvas (0..W/H) be kell maradjon viewportban zoom mellett
+  const vp = viewportEl();
+  if (!vp) return;
+
+  const vpW = vp.clientWidth;
+  const vpH = vp.clientHeight;
+
+  const scaledW = vpW * zoom;
+  const scaledH = vpH * zoom;
+
+  // ha zoom=1 → pan 0
+  const minX = Math.min(0, vpW - scaledW);
+  const minY = Math.min(0, vpH - scaledH);
+  const maxX = 0;
+  const maxY = 0;
+
+  pan.x = clamp(pan.x, minX, maxX);
+  pan.y = clamp(pan.y, minY, maxY);
+}
+
+function initPanOnEmptyWall() {
+  const vp = viewportEl();
+  if (!vp) return;
+
+  vp.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    // csak ha üres falon fogod meg (ne itemen)
+    const hit = e.target.closest?.(".item");
+    if (hit) return;
+    if (calibrating) return;
+    if (zoom <= 1.01) return;
+
+    e.preventDefault();
+    const p = getPointer(e);
+    panDrag = { startX: p.x, startY: p.y, baseX: pan.x, baseY: pan.y };
+  });
+
+  vp.addEventListener("mousemove", (e) => {
+    if (!panDrag) return;
+    const p = getPointer(e);
+    pan.x = panDrag.baseX + (p.x - panDrag.startX);
+    pan.y = panDrag.baseY + (p.y - panDrag.startY);
+    clampPanToBounds();
+    applyZoomTransform();
+  });
+
+  window.addEventListener("mouseup", () => { panDrag = null; });
+
+  vp.addEventListener("touchstart", (e) => {
+    const hit = e.target.closest?.(".item");
+    if (hit) return;
+    if (calibrating) return;
+    if (zoom <= 1.01) return;
+
+    const p = getPointer(e);
+    panDrag = { startX: p.x, startY: p.y, baseX: pan.x, baseY: pan.y };
+  }, { passive: true });
+
+  vp.addEventListener("touchmove", (e) => {
+    if (!panDrag) return;
+    const p = getPointer(e);
+    pan.x = panDrag.baseX + (p.x - panDrag.startX);
+    pan.y = panDrag.baseY + (p.y - panDrag.startY);
+    clampPanToBounds();
+    applyZoomTransform();
+    e.preventDefault();
+  }, { passive: false });
+
+  window.addEventListener("touchend", () => { panDrag = null; });
 }
 
 /*****************************************************************
@@ -171,20 +295,18 @@ function initMaterial() {
 }
 
 function applyMaterial(matKey) {
-  const canvas = canvasEl();
+  const c = canvasEl();
   const mat = MATERIALS[matKey] || MATERIALS.birch;
 
-  canvas.style.setProperty("--engrave", mat.engrave);
-  canvas.style.setProperty("--engrave-shadow", mat.shadow);
+  // ikon gravír
+  c.style.setProperty("--engrave", mat.engrave);
+  c.style.setProperty("--engrave-opacity", String(mat.iconOpacity));
+  c.style.setProperty("--engrave-shadow", mat.iconShadow);
 
-  if (mat.titleFill === "__WHITE__") {
-    canvas.style.setProperty("--title-fill", "linear-gradient(#ffffff, #ffffff)");
-  } else {
-    canvas.style.setProperty("--title-fill", `url("${mat.titleFill}")`);
-  }
-  canvas.style.setProperty("--title-shadow", mat.titleShadow);
+  // felirat (SVG paint)
+  syncTitleSvgPaint();
 
-  // ikonok gravír szín
+  // ikonok átszínezése
   document.querySelectorAll("#items-layer .icon-item").forEach(el => {
     applySvgEngraveColor(el, mat.engrave);
     el.dataset.material = matKey;
@@ -196,34 +318,35 @@ function applyMaterial(matKey) {
 }
 
 /*****************************************************************
- * Felirat
+ * Felirat (SVG TEXT + ENTER)
  *****************************************************************/
 function initTitle() {
   const input = document.getElementById("title-input");
   const tpl = document.getElementById("template-select");
   const titleItem = document.getElementById("title-item");
-  const titleText = document.getElementById("title-text");
   const centerBtn = document.getElementById("center-title-btn");
 
-  if (!input || !titleItem || !titleText) return;
+  if (!input || !titleItem) return;
 
   if (!input.value) input.value = "Felirat";
-  titleText.textContent = normalizeEllipsisSpacing(input.value);
+  setTitleSvgText(normalizeEllipsisSpacing(input.value));
 
   if (tpl) {
     tpl.addEventListener("change", () => {
       if (!tpl.value) return;
       input.value = tpl.value;
-      titleText.textContent = normalizeEllipsisSpacing(tpl.value);
+      setTitleSvgText(normalizeEllipsisSpacing(tpl.value));
       tpl.value = "";
       applyTitleLetterSize();
+      syncTitleSvgPaint();
       updateTitleSizeLabel();
     });
   }
 
   input.addEventListener("input", () => {
-    titleText.textContent = normalizeEllipsisSpacing(getTitleTextRaw() || "Felirat");
+    setTitleSvgText(normalizeEllipsisSpacing(getTitleTextRaw() || "Felirat"));
     applyTitleLetterSize();
+    syncTitleSvgPaint();
     updateTitleSizeLabel();
   });
 
@@ -231,7 +354,6 @@ function initTitle() {
     centerBtn.addEventListener("click", () => {
       centerTitle();
       updateTitleSizeLabel();
-      focusOnSelected(true);
     });
   }
 
@@ -239,10 +361,12 @@ function initTitle() {
 
   requestAnimationFrame(() => {
     applyTitleLetterSize();
+    syncTitleSvgPaint();
     updateTitleSizeLabel();
   });
 }
 
+// „.../… ” előtti szóköz szépítése
 function normalizeEllipsisSpacing(text) {
   const s = String(text || "");
   return s
@@ -251,19 +375,124 @@ function normalizeEllipsisSpacing(text) {
     .replace(/\s+(\.\.\.)/g, " $1");
 }
 
-function applyTitleLetterSize() {
-  const titleText = document.getElementById("title-text");
-  if (!titleText) return;
+function setTitleSvgText(text) {
+  const t = document.getElementById("title-svg-text");
+  if (!t) return;
 
-  const ppcm = getPxPerCm();
-  const px = TITLE_LETTER_CM * ppcm;
+  // több sor: <tspan> soronként
+  const lines = String(text || "Felirat").replace(/\r\n/g, "\n").split("\n");
+  while (t.firstChild) t.removeChild(t.firstChild);
 
-  // Fix betűméret px-ben (valós cm -> px)
-  titleText.style.fontSize = `${clamp(px, 10, 600)}px`;
+  // y=0-hoz “hanging”, ezért dy-vel léptetünk
+  lines.forEach((line, i) => {
+    const tsp = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
+    tsp.setAttribute("x", "50%");
+    tsp.setAttribute("dy", i === 0 ? "0" : "1.05em");
+    tsp.textContent = line.length ? line : " ";
+    t.appendChild(tsp);
+  });
 }
 
+function applyTitleLetterSize() {
+  const svg = document.getElementById("title-svg");
+  const text = document.getElementById("title-svg-text");
+  if (!svg || !text) return;
+
+  const ppcm = getPxPerCm();
+  const fontPx = TITLE_LETTER_CM * ppcm;
+
+  // SVG text méret + font
+  text.style.fontFamily = `"AlwaysInMyHeart", system-ui, -apple-system, "Segoe UI", sans-serif`;
+  text.style.fontSize = `${clamp(fontPx, 10, 600)}px`;
+
+  // reflow után felmérjük a bbox-ot és SVG viewbox/size-t beállítjuk
+  requestAnimationFrame(() => fitTitleSvgToText());
+}
+
+function fitTitleSvgToText() {
+  const svg = document.getElementById("title-svg");
+  const text = document.getElementById("title-svg-text");
+  if (!svg || !text) return;
+
+  let bb;
+  try {
+    bb = text.getBBox();
+  } catch (_) {
+    // ha még nem kész, próbáljuk később
+    requestAnimationFrame(() => fitTitleSvgToText());
+    return;
+  }
+
+  const pad = 6; // kis légzés
+  const w = Math.max(10, bb.width + pad * 2);
+  const h = Math.max(10, bb.height + pad * 2);
+
+  svg.setAttribute("width", String(w));
+  svg.setAttribute("height", String(h));
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+
+  // a text-et középre rakjuk az SVG-ben
+  // (dominant-baseline hanging + y=pad)
+  text.setAttribute("x", String(w / 2));
+  text.setAttribute("y", String(pad));
+}
+
+function syncTitleSvgPaint() {
+  const matKey = getMaterialKey();
+  const mat = MATERIALS[matKey] || MATERIALS.birch;
+
+  const text = document.getElementById("title-svg-text");
+  const img = document.getElementById("title-pattern-image");
+  const svg = document.getElementById("title-svg");
+  if (!text || !svg) return;
+
+  // finom “fa felirat” mélység (nem áttetsző)
+  text.style.paintOrder = "stroke";
+  text.style.stroke = "rgba(0,0,0,0.12)";
+  text.style.strokeWidth = "1";
+  text.style.strokeLinejoin = "round";
+
+  if (mat.titleMode === "solid") {
+    text.setAttribute("fill", mat.titleSolid || "#ffffff");
+    if (img) img.setAttribute("href", "");
+  } else {
+    // texture pattern fill
+    if (img) img.setAttribute("href", mat.titleTextureUrl);
+    text.setAttribute("fill", "url(#title-pattern)");
+  }
+
+  // a pattern image a bbox-hoz igazodjon
+  requestAnimationFrame(() => {
+    const bb = safeBBox(text);
+    if (!bb) return;
+
+    // “objectBoundingBox” patternnél 1x1-es image is ok, de html2canvas néha jobban szereti,
+    // ha valós px méretet adunk: ezért userSpaceOnUse-ra váltunk dinamikusan.
+    const defs = svg.querySelector("defs");
+    const pat = svg.querySelector("#title-pattern");
+    if (pat && defs) {
+      pat.setAttribute("patternUnits", "userSpaceOnUse");
+      pat.setAttribute("x", "0");
+      pat.setAttribute("y", "0");
+      pat.setAttribute("width", String(Math.max(10, bb.width)));
+      pat.setAttribute("height", String(Math.max(10, bb.height)));
+      if (img) {
+        img.setAttribute("width", String(Math.max(10, bb.width)));
+        img.setAttribute("height", String(Math.max(10, bb.height)));
+      }
+    }
+  });
+}
+
+function safeBBox(textEl) {
+  try { return textEl.getBBox(); } catch (_) { return null; }
+}
+
+/*****************************************************************
+ * Pozicionálás + kijelzett cm
+ *****************************************************************/
 function centerTitle() {
-  const canvas = zoomEl();
+  const canvas = canvasEl();
   const title = document.getElementById("title-item");
   if (!canvas || !title) return;
 
@@ -298,12 +527,13 @@ function initIconPanel() {
     btn.addEventListener("click", async () => {
       const src = btn.dataset.src;
       const alt = btn.dataset.alt || "Ikon";
+
       try {
         const svgText = await fetchSvg(src);
         addIcon(svgText, { src, alt });
       } catch (e) {
         console.error(e);
-        alert("Nem sikerült betölteni az SVG-t: " + src);
+        alert("Nem sikerült betölteni az SVG-t: " + src + "\n\nHa offline (file://) módban futtatod, a böngésző letilthatja a fetch-t. GitHub Pages-en biztosan jó.");
       }
     });
   });
@@ -320,16 +550,17 @@ function initIconPanel() {
 }
 
 async function fetchSvg(url) {
-  const res = await fetch(url);
+  const res = await fetch(url, { cache: "no-cache" });
   if (!res.ok) throw new Error("Fetch hiba: " + url);
   return await res.text();
 }
 
 function addIcon(svgText, meta) {
   const itemsLayer = document.getElementById("items-layer");
-  if (!itemsLayer) return;
+  const canvas = canvasEl();
+  if (!itemsLayer || !canvas) return;
 
-  const matKey = document.querySelector('input[name="material"]:checked')?.value || "birch";
+  const matKey = getMaterialKey();
   const mat = MATERIALS[matKey] || MATERIALS.birch;
 
   const el = document.createElement("div");
@@ -343,13 +574,14 @@ function addIcon(svgText, meta) {
 
   const svg = el.querySelector("svg");
 
+  // Ikon valós cm -> px
   const ppcm = getPxPerCm();
   const size = computeSvgSizePx(svg, ppcm, ICON_BASE_CM);
 
   el.style.width  = `${size.w}px`;
   el.style.height = `${size.h}px`;
 
-  const rC = zoomEl().getBoundingClientRect();
+  const rC = canvas.getBoundingClientRect();
   el.style.left = `${(rC.width - size.w) / 2}px`;
   el.style.top  = `${(rC.height - size.h) / 2}px`;
 
@@ -358,8 +590,6 @@ function addIcon(svgText, meta) {
   itemsLayer.appendChild(el);
   makeDraggable(el);
   setSelected(el);
-
-  focusOnSelected(true);
 }
 
 function computeSvgSizePx(svg, pxPerCm, targetHeightCm) {
@@ -435,20 +665,18 @@ function applySvgEngraveColor(containerEl, color) {
 }
 
 /*****************************************************************
- * Drag (item) + Pan (zoom)
+ * Drag (touch + mouse) – a zoom miatt: a pozíciót CANVAS koordinátában kezeljük
  *****************************************************************/
 function makeDraggable(el) {
   el.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
     e.preventDefault();
-    e.stopPropagation();
     setSelected(el);
     startDrag(e, el);
   });
 
   el.addEventListener("touchstart", (e) => {
     e.preventDefault();
-    e.stopPropagation();
     setSelected(el);
     startDrag(e, el);
   }, { passive: false });
@@ -456,53 +684,50 @@ function makeDraggable(el) {
 
 function startDrag(e, el) {
   const p = getPointer(e);
-  const cR = canvasRect();
+
+  const cR = canvasEl().getBoundingClientRect(); // transzformált rect
   const r  = el.getBoundingClientRect();
 
-  // képernyő -> content koordináta
-  const contentLeft = (r.left - cR.left - view.tx) / view.zoom;
-  const contentTop  = (r.top  - cR.top  - view.ty) / view.zoom;
+  // képernyő → canvas koordináta (zoom/pan miatt)
+  const local = screenToCanvas(p.x, p.y);
+  const localEl = screenToCanvas(r.left, r.top);
 
   el.style.transform = "none";
-  el.style.left = `${contentLeft}px`;
-  el.style.top  = `${contentTop}px`;
+  el.style.left = `${localEl.x}px`;
+  el.style.top  = `${localEl.y}px`;
 
   dragState = {
     el,
-    offsetX: (p.x - cR.left - view.tx) / view.zoom - contentLeft,
-    offsetY: (p.y - cR.top  - view.ty) / view.zoom - contentTop
+    offsetX: local.x - localEl.x,
+    offsetY: local.y - localEl.y
   };
 }
 
-document.addEventListener("mousemove", (e) => {
-  if (dragState) onDragMove(e);
-  else if (panState) onPanMove(e);
-});
+document.addEventListener("mousemove", (e) => { if (dragState) onDragMove(e); });
 document.addEventListener("touchmove", (e) => {
-  if (dragState) { onDragMove(e); e.preventDefault(); }
-  else if (panState) { onPanMove(e); e.preventDefault(); }
+  if (!dragState) return;
+  onDragMove(e);
+  e.preventDefault();
 }, { passive: false });
 
-document.addEventListener("mouseup", () => { dragState = null; panState = null; });
-document.addEventListener("touchend", () => { dragState = null; panState = null; });
+document.addEventListener("mouseup",   () => { dragState = null; });
+document.addEventListener("touchend",  () => { dragState = null; });
 
 function onDragMove(e) {
   const p = getPointer(e);
-  const cR = canvasRect();
   const { el, offsetX, offsetY } = dragState;
 
+  const cSize = getCanvasSize();
   const w = el.offsetWidth;
   const h = el.offsetHeight;
 
-  let left = (p.x - cR.left - view.tx) / view.zoom - offsetX;
-  let top  = (p.y - cR.top  - view.ty) / view.zoom - offsetY;
+  const local = screenToCanvas(p.x, p.y);
 
-  // clamp content coord alapján
-  const maxLeft = zoomEl().clientWidth - w;
-  const maxTop  = zoomEl().clientHeight - h;
+  let left = local.x - offsetX;
+  let top  = local.y - offsetY;
 
-  left = clamp(left, 0, maxLeft);
-  top  = clamp(top, 0, maxTop);
+  left = clamp(left, 0, cSize.w - w);
+  top  = clamp(top,  0, cSize.h - h);
 
   el.style.left = `${left}px`;
   el.style.top  = `${top}px`;
@@ -510,51 +735,21 @@ function onDragMove(e) {
   if (el.id === "title-item") updateTitleSizeLabel();
 }
 
-function startPan(e) {
-  if (view.zoom <= 1) return;
-  const p = getPointer(e);
-  panState = { startX: p.x, startY: p.y, baseTx: view.tx, baseTy: view.ty };
+function getCanvasSize() {
+  const vp = viewportEl();
+  // a canvas alapmérete a viewport mérete (mert abs inset:0)
+  return { w: vp.clientWidth, h: vp.clientHeight };
 }
 
-function onPanMove(e) {
-  const p = getPointer(e);
-  const dx = p.x - panState.startX;
-  const dy = p.y - panState.startY;
+function screenToCanvas(screenX, screenY) {
+  const c = canvasEl();
+  const rect = c.getBoundingClientRect();
 
-  view.tx = panState.baseTx + dx;
-  view.ty = panState.baseTy + dy;
+  // rect már transzformált, ezért a bal-felső eltolás után visszaosztunk a zoommal
+  const x = (screenX - rect.left) / zoom;
+  const y = (screenY - rect.top) / zoom;
 
-  clampView();
-  applyView();
-}
-
-function initPanOnEmpty() {
-  const canvas = canvasEl();
-  if (!canvas) return;
-
-  canvas.addEventListener("mousedown", (e) => {
-    // üres falon drag -> pan (zoom alatt)
-    const hitItem = e.target.closest?.(".item");
-    const hitZoomUI = e.target.closest?.("#zoom-controls");
-    const hitCalib = e.target.closest?.("#calibration-layer");
-    if (hitItem || hitZoomUI || hitCalib) return;
-
-    // katt üresre: kijelölés törlés
-    setSelected(null);
-
-    // zoom esetén pan
-    startPan(e);
-  });
-
-  canvas.addEventListener("touchstart", (e) => {
-    const hitItem = e.target.closest?.(".item");
-    const hitZoomUI = e.target.closest?.("#zoom-controls");
-    const hitCalib = e.target.closest?.("#calibration-layer");
-    if (hitItem || hitZoomUI || hitCalib) return;
-
-    setSelected(null);
-    startPan(e);
-  }, { passive: true });
+  return { x, y };
 }
 
 /*****************************************************************
@@ -573,10 +768,18 @@ function initCategories() {
  * Kijelölés, törlés, copy/paste
  *****************************************************************/
 function initSelectionAndShortcuts() {
-  initPanOnEmpty();
+  const c = canvasEl();
+  if (!c) return;
 
-  const canvas = canvasEl();
-  if (!canvas) return;
+  c.addEventListener("mousedown", (e) => {
+    const hit = e.target.closest(".item");
+    if (!hit) setSelected(null);
+  });
+
+  c.addEventListener("touchstart", (e) => {
+    const hit = e.target.closest?.(".item");
+    if (!hit) setSelected(null);
+  }, { passive: true });
 
   document.addEventListener("keydown", (e) => {
     const tag = (e.target?.tagName || "").toLowerCase();
@@ -606,16 +809,13 @@ function initSelectionAndShortcuts() {
 }
 
 function serializeItem(el) {
-  const cR = canvasRect();
   const r  = el.getBoundingClientRect();
-
-  const contentLeft = (r.left - cR.left - view.tx) / view.zoom;
-  const contentTop  = (r.top  - cR.top  - view.ty) / view.zoom;
+  const p0 = screenToCanvas(r.left, r.top);
 
   const base = {
     type: el.id === "title-item" ? "title" : "icon",
-    left: contentLeft + 20,
-    top:  contentTop  + 20,
+    left: p0.x + 20,
+    top:  p0.y + 20,
     w: el.offsetWidth,
     h: el.offsetHeight
   };
@@ -632,15 +832,16 @@ function serializeItem(el) {
 function pasteItem(data) {
   if (data.type === "title") {
     setSelected(document.getElementById("title-item"));
-    focusOnSelected(true);
     return;
   }
 
   const itemsLayer = document.getElementById("items-layer");
   if (!itemsLayer) return;
 
-  const matKey  = document.querySelector('input[name="material"]:checked')?.value || "birch";
+  const matKey  = getMaterialKey();
   const mat = MATERIALS[matKey] || MATERIALS.birch;
+
+  const cSize = getCanvasSize();
 
   const el = document.createElement("div");
   el.className = "item icon-item";
@@ -648,12 +849,8 @@ function pasteItem(data) {
 
   el.style.width  = `${data.w}px`;
   el.style.height = `${data.h}px`;
-
-  const maxLeft = zoomEl().clientWidth - data.w;
-  const maxTop  = zoomEl().clientHeight - data.h;
-
-  el.style.left   = `${clamp(data.left, 0, maxLeft)}px`;
-  el.style.top    = `${clamp(data.top,  0, maxTop)}px`;
+  el.style.left   = `${clamp(data.left, 0, cSize.w - data.w)}px`;
+  el.style.top    = `${clamp(data.top,  0, cSize.h - data.h)}px`;
 
   el.dataset.src = data.src || "";
   el.dataset.alt = data.alt || "Ikon";
@@ -665,8 +862,6 @@ function pasteItem(data) {
   itemsLayer.appendChild(el);
   makeDraggable(el);
   setSelected(el);
-
-  focusOnSelected(true);
 }
 
 /*****************************************************************
@@ -683,12 +878,13 @@ function initCalibration() {
   if (!toggleBtn || !saveBtn || !cancelBtn || !layer || !topH || !botH) return;
 
   function placeDefaultHandles() {
-    const r = zoomEl().getBoundingClientRect();
-    const y1 = r.height * 0.55;
-    const y2 = r.height * 0.78;
+    const cSize = getCanvasSize();
+    const y1 = cSize.h * 0.55;
+    const y2 = cSize.h * 0.78;
     topH.style.top = `${y1}px`;
     botH.style.top = `${y2}px`;
   }
+
   placeDefaultHandles();
 
   toggleBtn.addEventListener("click", () => {
@@ -719,14 +915,13 @@ function initCalibration() {
   });
 
   saveBtn.addEventListener("click", () => {
-    const r = zoomEl().getBoundingClientRect();
+    const cSize = getCanvasSize();
 
-    // handle top pozíció content coord-ban van, jó
     const yTop = parsePx(topH.style.top);
     const yBot = parsePx(botH.style.top);
 
-    const topY = clamp(Math.min(yTop, yBot), 0, r.height);
-    const botY = clamp(Math.max(yTop, yBot), 0, r.height);
+    const topY = clamp(Math.min(yTop, yBot), 0, cSize.h);
+    const botY = clamp(Math.max(yTop, yBot), 0, cSize.h);
 
     const cabinetPx = botY - topY;
     if (cabinetPx < 10) {
@@ -739,6 +934,7 @@ function initCalibration() {
     syncScaleUi();
 
     applyTitleLetterSize();
+    syncTitleSvgPaint();
     updateTitleSizeLabel();
 
     calibrating = false;
@@ -766,7 +962,10 @@ function initCalibration() {
   hookHandle(topH);
   hookHandle(botH);
 
-  document.addEventListener("mousemove", (e) => { if (calibDrag) onCalibMove(e); });
+  document.addEventListener("mousemove", (e) => {
+    if (!calibDrag) return;
+    onCalibMove(e);
+  });
   document.addEventListener("touchmove", (e) => {
     if (!calibDrag) return;
     onCalibMove(e);
@@ -777,12 +976,12 @@ function initCalibration() {
   document.addEventListener("touchend", () => { calibDrag = null; });
 
   function onCalibMove(e) {
-    const r = canvasRect();
+    const cSize = getCanvasSize();
     const p = getPointer(e);
 
-    // pointer screen -> content coord (zoom+pan figyelembe)
-    let y = (p.y - r.top - view.ty) / view.zoom;
-    y = clamp(y, 0, zoomEl().clientHeight);
+    // screen → canvas
+    const local = screenToCanvas(p.x, p.y);
+    let y = clamp(local.y, 0, cSize.h);
 
     calibDrag.el.style.top = `${y}px`;
   }
@@ -794,128 +993,12 @@ function parsePx(s) {
 }
 
 /*****************************************************************
- * Zoom
- *****************************************************************/
-function initZoom() {
-  const btns = document.querySelectorAll(".zoom-btn[data-zoom]");
-  const reset = document.getElementById("zoom-reset");
-  const out = document.getElementById("zoom-readout");
-  const canvas = canvasEl();
-
-  function setZoom(z) {
-    const prev = view.zoom;
-    view.zoom = clamp(Number(z) || 1, 1, 3);
-
-    // ha most lépünk nagyobbra/kisebbre, próbáljunk fókuszálni a kijelölt elemre
-    const shouldFocus = (Math.abs(view.zoom - prev) > 0.001);
-    if (shouldFocus) focusOnSelected(false);
-
-    clampView();
-    applyView();
-    if (out) out.textContent = `${view.zoom.toFixed(1)}×`;
-  }
-
-  btns.forEach(b => {
-    b.addEventListener("click", () => setZoom(b.dataset.zoom));
-  });
-
-  if (reset) {
-    reset.addEventListener("click", () => {
-      view.zoom = 1;
-      view.tx = 0;
-      view.ty = 0;
-      applyView();
-      if (out) out.textContent = `1.0×`;
-    });
-  }
-
-  // görgő + ctrl zoom (PC)
-  canvas.addEventListener("wheel", (e) => {
-    if (!e.ctrlKey) return;
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    setZoom(view.zoom + delta);
-  }, { passive: false });
-
-  applyView();
-}
-
-function applyView() {
-  const canvas = canvasEl();
-  canvas.style.setProperty("--zoom", String(view.zoom));
-  canvas.style.setProperty("--tx", `${view.tx}px`);
-  canvas.style.setProperty("--ty", `${view.ty}px`);
-}
-
-function clampView() {
-  const r = canvasRect();
-  const w = r.width;
-  const h = r.height;
-
-  const scaledW = w * view.zoom;
-  const scaledH = h * view.zoom;
-
-  // ha zoom = 1 -> 0..0
-  if (view.zoom <= 1.0001) {
-    view.tx = 0;
-    view.ty = 0;
-    return;
-  }
-
-  // tx/ty screen px
-  const minTx = w - scaledW; // negatív
-  const minTy = h - scaledH;
-
-  view.tx = clamp(view.tx, minTx, 0);
-  view.ty = clamp(view.ty, minTy, 0);
-}
-
-function focusOnSelected(animate) {
-  if (view.zoom <= 1.0001) return;
-
-  const target = selectedItem || document.getElementById("title-item");
-  if (!target) return;
-
-  const cR = canvasRect();
-  const tR = target.getBoundingClientRect();
-
-  // target középpont screen-ben
-  const targetCx = tR.left + tR.width / 2;
-  const targetCy = tR.top  + tR.height / 2;
-
-  // vászon közepe
-  const canvasCx = cR.left + cR.width / 2;
-  const canvasCy = cR.top  + cR.height / 2;
-
-  // mennyit toljunk screen px-ben
-  const dx = canvasCx - targetCx;
-  const dy = canvasCy - targetCy;
-
-  if (animate) {
-    // egyszerű animáció
-    const steps = 10;
-    const startTx = view.tx, startTy = view.ty;
-    for (let i = 1; i <= steps; i++) {
-      setTimeout(() => {
-        view.tx = startTx + (dx * i / steps);
-        view.ty = startTy + (dy * i / steps);
-        clampView();
-        applyView();
-      }, i * 12);
-    }
-  } else {
-    view.tx += dx;
-    view.ty += dy;
-  }
-}
-
-/*****************************************************************
- * PNG export
+ * PNG export – nagy felbontás, és a zoom/pan NEM rontja el a képet
  *****************************************************************/
 function initExport() {
   const btn = document.getElementById("export-btn");
-  const canvasNode = canvasEl();
-  if (!btn || !canvasNode) return;
+  const node = viewportEl(); // a teljes látvány “ablak”
+  if (!btn || !node) return;
 
   btn.addEventListener("click", async () => {
     const prev = selectedItem;
@@ -923,22 +1006,20 @@ function initExport() {
 
     document.body.classList.add("exporting");
 
-    try {
-      // exportnál a zoom/pan ne torzítson: reset view ideiglenesen
-      const saved = { ...view };
-      view.zoom = 1; view.tx = 0; view.ty = 0;
-      applyView();
+    // exportnál mindig 1× zoom/pan, hogy a render tiszta legyen
+    const oldZoom = zoom;
+    const oldPan = { ...pan };
+    zoom = 1; pan = { x: 0, y: 0 };
+    applyZoomTransform();
 
-      const shot = await html2canvas(canvasNode, {
-        scale: 2,
+    try {
+      // nagyobb scale: jobb minőség
+      const shot = await html2canvas(node, {
+        scale: 3,
         useCORS: true,
         backgroundColor: null,
         logging: false
       });
-
-      // visszaállítjuk
-      view = saved;
-      applyView();
 
       const a = document.createElement("a");
       a.href = shot.toDataURL("image/png");
@@ -948,6 +1029,11 @@ function initExport() {
       console.error(e);
       alert("Hiba történt a PNG export során.");
     } finally {
+      // visszaállítjuk a zoom/pan-t
+      zoom = oldZoom;
+      pan = oldPan;
+      applyZoomTransform();
+
       document.body.classList.remove("exporting");
       if (prev) prev.classList.add("selected");
     }
@@ -965,7 +1051,7 @@ function initCsvExport() {
 
 function exportCsv() {
   const ppcm = getPxPerCm();
-  const matKey = document.querySelector('input[name="material"]:checked')?.value || "birch";
+  const matKey = getMaterialKey();
 
   const rows = [];
   rows.push("Típus;Név;Szélesség (cm);Magasság (cm);Anyag;Megjegyzés;Forrás");
@@ -982,7 +1068,7 @@ function exportCsv() {
     ((tR.height / ppcm).toFixed(2)).replace(".", ","),
     matKey,
     csvEsc("Ékezetek/betűrészek gyártáskor forrasztva, egybe."),
-    csvEsc("font:AlwaysInMyHeart (anyag textúra kitöltés)")
+    csvEsc("font:AlwaysInMyHeart (SVG pattern/solid)")
   ].join(";"));
 
   const icons = document.querySelectorAll("#items-layer .icon-item");
