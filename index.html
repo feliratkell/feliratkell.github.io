@@ -1,208 +1,134 @@
-<!DOCTYPE html>
+<!-- index.html -->
+<!doctype html>
 <html lang="hu">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Felirat látványtervező</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div id="app">
+  <div class="app">
     <aside class="sidebar">
-      <h1 class="app-title">Felirat látványtervező</h1>
+      <h1>Felirat látványtervező</h1>
 
-      <section class="panel-section">
+      <section class="panel">
         <h2>Fal háttér</h2>
-
-        <label class="field-label" for="wall-select">Szín</label>
-        <select id="wall-select" class="select">
-          <option value="white">Fehér</option>
-          <option value="beige">Bézs</option>
-          <option value="gray">Szürke</option>
-          <option value="green">Zöld</option>
-          <option value="pink">Rózsaszín</option>
-        </select>
-
-        <div class="hint-text">
-          A falak fix képek az assets/backgrounds/ mappából.
-        </div>
+        <label class="row">
+          <span>Szín</span>
+          <select id="wallColor">
+            <option value="white" selected>Fehér</option>
+            <option value="beige">Bézs</option>
+            <option value="gray">Szürke</option>
+            <option value="green">Zöld</option>
+            <option value="pink">Rózsaszín</option>
+          </select>
+        </label>
+        <p class="hint">Minden szín a <b>white.png</b> fal-maszkolt színezése (azonos kamera/kiegészítők).</p>
       </section>
 
-      <section class="panel-section">
+      <section class="panel">
         <h2>Nagyítás / zoom</h2>
-
-        <div class="field-row">
-          <input id="zoom-range" class="range" type="range" min="1" max="3" step="0.1" value="1" />
-          <div class="mini" style="max-width:92px;">
-            <div class="mini-label">Zoom</div>
-            <div class="mini-value"><span id="zoom-out">1.0</span>×</div>
+        <div class="row">
+          <input id="zoom" type="range" min="1" max="3" step="0.01" value="1" />
+          <div class="pill">
+            <div class="pillTitle">Zoom</div>
+            <div id="zoomLabel" class="pillValue">1.00×</div>
           </div>
         </div>
-
-        <div class="field-row" style="margin-top:8px;">
-          <button id="zoom-reset-btn" class="secondary-btn" type="button">Reset</button>
-        </div>
-
-        <div class="hint-text">
-          Nagyításkor az <b>üres falon húzva</b> tudsz nézelődni (pan).
-        </div>
+        <button id="resetView" class="btn">Reset</button>
+        <p class="hint">Nagyításkor az <b>üres falon húzva</b> tudsz nézelődni (pan).</p>
       </section>
 
-      <section class="panel-section">
+      <section class="panel">
         <h2>Kalibráció (komód = 70 cm)</h2>
-
-        <button id="calib-toggle-btn" class="secondary-btn" type="button">
-          Kalibrálás indítása
-        </button>
-
-        <div class="hint-text">
-          Lépés: húzd a <b>felső</b> jelölőt a komód tetejére, az <b>alsót</b> a komód aljára, majd „Mentés”.
-          <br />
-          Alapesetben nincsenek vonalak / jelölők.
+        <button id="startCalib" class="btn">Kalibrálás indítása</button>
+        <p class="hint">
+          Lépés: húzd a felső jelölőt a komód tetejére, az alsót a komód aljára, majd „Mentés”.
+          Alap esetben nincsenek vonalak / jelölők.
+        </p>
+        <div class="row">
+          <div class="pill wide">
+            <div class="pillTitle">Skála</div>
+            <div id="pxPerCmLabel" class="pillValue">— px / cm</div>
+          </div>
         </div>
 
-        <div class="field-row" style="margin-top:10px;">
-          <button id="calib-save-btn" class="primary-btn" type="button" style="margin:0; display:none;">
-            Kalibráció mentése
-          </button>
-          <button id="calib-cancel-btn" class="secondary-btn" type="button" style="display:none;">
-            Mégse
-          </button>
-        </div>
-
-        <div class="mini" style="margin-top:10px;">
-          <div class="mini-label">Skála</div>
-          <div class="mini-value"><span id="scale-out">—</span> px / cm</div>
+        <div id="calibActions" class="row hidden">
+          <button id="saveCalib" class="btn primary">Mentés</button>
+          <button id="cancelCalib" class="btn ghost">Mégse</button>
         </div>
       </section>
 
-      <section class="panel-section">
+      <section class="panel">
         <h2>Anyag</h2>
-
-        <label class="radio-row">
-          <input type="radio" name="material" value="birch" checked />
-          <span>Natúr nyír rétegelt (4 mm)</span>
+        <label class="row">
+          <span>Felirat / minta</span>
+          <select id="material">
+            <option value="birch" selected>Natúr nyír rétegelt (4 mm)</option>
+            <option value="hdf">Fehér HDF</option>
+          </select>
         </label>
-
-        <label class="radio-row">
-          <input type="radio" name="material" value="hdf" />
-          <span>Fehér HDF (3 mm)</span>
-        </label>
-
-        <div class="hint-text">
-          Felirat = anyag (textúra / fehér), NEM gravír. Ikonok = gravír.
-        </div>
+        <p class="hint">Nyír: világos barnás gravír (nem szürke). HDF: sötétszürke gravír (nem fekete).</p>
       </section>
 
-      <section class="panel-section">
+      <section class="panel">
         <h2>Felirat</h2>
+        <label class="stack">
+          <span>Szöveg</span>
+          <input id="textInput" type="text" value="Egyszer volt, hol nem volt..." />
+        </label>
 
-        <label class="field-label" for="template-select">Sablonok</label>
-        <select id="template-select" class="select">
-          <option value="">– válassz sablont –</option>
-          <option value="Egyszer volt, hol nem volt …">Egyszer volt, hol nem volt …</option>
-          <option value="Kis lépések, nagy csodák">Kis lépések, nagy csodák</option>
-          <option value="Álmodj nagyot kisfiam!">Álmodj nagyot kisfiam!</option>
-          <option value="Álmodj nagyot kislányom!">Álmodj nagyot kislányom!</option>
-        </select>
-
-        <label class="field-label" for="title-input">Szöveg</label>
-        <textarea id="title-input" placeholder="Írd ide a feliratot..." rows="2"></textarea>
-
-        <div class="field-row">
-          <div class="mini">
-            <div class="mini-label">Felirat magasság (valós)</div>
-            <div class="mini-value"><span id="title-size">—</span> cm</div>
-          </div>
-          <button id="center-title-btn" class="secondary-btn" type="button">
-            Középre
-          </button>
-        </div>
-
-        <div class="hint-text">
-          A felirat húzható. Fix valós betűméret, Enter nem kicsinyít.
-          <br />
-          <b>Megjegyzés:</b> A végső gyártáskor az ékezetek és különálló betűrészek egybe lesznek forrasztva, így a felirat egységes darabként készül el.
-        </div>
-      </section>
-
-      <section class="panel-section">
-        <h2>Dekor ikonok</h2>
-
-        <div class="pattern-category collapsed">
-          <button class="pattern-category-header" type="button">
-            <span>Ludas</span>
-            <span class="pattern-category-arrow">▾</span>
-          </button>
-          <div class="pattern-category-body">
-            <div class="pattern-grid">
-              <button class="pattern-btn" type="button" data-src="icons/ludas/kis_lud.svg" data-alt="Kis lud">
-                <img src="icons/ludas/kis_lud.svg" alt="Kis lud" />
-              </button>
-              <button class="pattern-btn" type="button" data-src="icons/ludas/nagy_lud.svg" data-alt="Nagy lud">
-                <img src="icons/ludas/nagy_lud.svg" alt="Nagy lud" />
-              </button>
-            </div>
+        <div class="row">
+          <label class="stack grow">
+            <span>Magasság (cm)</span>
+            <input id="textCm" type="range" min="3" max="11" step="0.1" value="6" />
+          </label>
+          <div class="pill">
+            <div class="pillTitle">Felirat</div>
+            <div id="textCmLabel" class="pillValue">6.0 cm</div>
           </div>
         </div>
 
-        <button id="delete-btn" class="secondary-btn" type="button">
-          Kijelölt törlése
-        </button>
+        <p class="hint">Fogd meg a feliratot és húzd. A méret valós cm-ben skálázódik a kalibráció alapján.</p>
+      </section>
 
-        <div class="hint-text">
-          Tipp: Del / Backspace törlés, Ctrl+C / Ctrl+V másolás.
+      <section class="panel">
+        <h2>Minták</h2>
+        <div class="row">
+          <button id="addBirds" class="btn">Madarak hozzáadása</button>
+          <button id="clearAll" class="btn ghost">Törlés</button>
         </div>
+        <p class="hint">A minta ugyanazt az anyag-finish-t kapja, mint a felirat.</p>
       </section>
 
-      <section class="panel-section">
-        <h2>Mentés</h2>
-        <button id="export-btn" class="primary-btn" type="button">PNG export</button>
-        <button id="export-csv-btn" class="secondary-btn" type="button">CSV méretlista</button>
-      </section>
+      <footer class="foot">
+        <small>Fix alap: assets/backgrounds/white.png</small>
+      </footer>
     </aside>
 
-    <main class="workspace">
-      <div class="workspace-inner">
-        <div id="canvas-wrapper">
-          <!-- zoom/pan a viewporton történik -->
-          <div id="canvas-viewport">
-            <div id="canvas">
-              <div id="wall-layer"></div>
+    <main class="stageWrap">
+      <div id="stage" class="stage">
+        <!-- a háttér itt canvas-szal renderelődik -->
+        <canvas id="bgCanvas" class="bgCanvas"></canvas>
 
-              <!-- Kalibráció overlay (alapesetben rejtve, exportnál sem látszik) -->
-              <div id="calibration-layer" aria-hidden="true">
-                <div id="calib-top" class="calib-handle" title="Komód teteje"></div>
-                <div id="calib-bottom" class="calib-handle" title="Komód alja"></div>
-              </div>
-
-              <div id="items-layer">
-                <div id="title-item" class="item title-item" tabindex="0" aria-label="Felirat">
-                  <!-- SVG textúra kitöltés: export-stabil -->
-                  <svg id="title-svg" class="title-svg" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                    <defs>
-                      <pattern id="title-pattern" patternUnits="objectBoundingBox" width="1" height="1">
-                        <image id="title-pattern-image" href="" x="0" y="0" width="1" height="1" preserveAspectRatio="xMidYMid slice"></image>
-                      </pattern>
-                    </defs>
-
-                    <text id="title-svg-text"
-                      x="50%" y="0"
-                      text-anchor="middle"
-                      dominant-baseline="hanging"
-                      xml:space="preserve">Felirat</text>
-                  </svg>
-                </div>
-              </div>
-            </div>
+        <!-- overlay réteg: felirat + minták -->
+        <div id="overlay" class="overlay">
+          <div id="textObj" class="obj textObj" draggable="false">
+            <div class="objInner" id="textInner">Egyszer volt, hol nem volt...</div>
           </div>
+        </div>
 
+        <!-- kalibráció jelölők -->
+        <div id="calibLayer" class="calibLayer hidden">
+          <div id="calibLine" class="calibLine"></div>
+          <div id="calibTop" class="calibHandle">▲</div>
+          <div id="calibBottom" class="calibHandle">▼</div>
         </div>
       </div>
     </main>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script src="script.js"></script>
 </body>
 </html>
